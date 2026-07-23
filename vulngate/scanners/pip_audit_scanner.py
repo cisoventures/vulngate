@@ -5,11 +5,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..knowledge import dependency_summary
 from ..schema import Finding, fingerprint
 from .base import (ScanOutput, completed, errored, not_applicable, rel_posix,
                    resolve_cmd, run_cmd, unavailable)
 
 NAME = "pip-audit"
+
+
+def _req_scope(rel_req: str) -> str:
+    """Guess runtime vs build-only from the requirements filename. Python has no
+    lockfile dev flag, so a name like requirements-dev.txt / test-requirements.txt
+    is the honest signal; otherwise assume it ships in the app (runtime)."""
+    low = rel_req.lower()
+    if any(t in low for t in ("dev", "test", "lint", "doc", "build")):
+        return "development"
+    return "runtime"
 
 
 def _version(cmd: list[str]) -> str | None:
@@ -39,6 +50,7 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
     findings: list[Finding] = []
     for req in det.py_requirements:
         rel_req = rel_posix(req, root)
+        scope = _req_scope(rel_req)         # runtime | development (by filename)
         argv = [*cmd, "-r", str(req), "-f", "json", "--progress-spinner", "off"]
         if no_deps:
             argv.append("--no-deps")
@@ -64,20 +76,17 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
                     f"Upgrade {name} from {installed} to {fixes[0]}." if fixes
                     else f"No fixed version is published yet for {name}; review the advisory ({vid})."
                 )
-                # Dependency vulns are the PACKAGE's flaw, not the user's code —
-                # so the summary is package-framed, never the code-pattern CWE text.
-                summary = (
-                    f"The '{name}' package your project depends on has a known security "
-                    f"flaw. Updating it to a fixed version closes the hole."
-                )
                 findings.append(Finding(
                     id=fid, scanner=NAME, rule=vid, severity=severity,
                     file=rel_req, line=None,
-                    plain_summary=summary,
+                    # Dependency vulns are the PACKAGE's flaw, not the user's code —
+                    # framed by package + whether it ships in the live app.
+                    plain_summary=dependency_summary(name, scope),
                     description=desc[:500], remediation_hint=remediation, dedupe_hash=dedupe,
                     details={
                         "package": name, "installed_version": installed,
                         "fixed_versions": fixes, "aliases": aliases,
+                        "dependency_scope": scope,
                     },
                 ))
     return completed(NAME, version, findings)

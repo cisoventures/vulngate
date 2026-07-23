@@ -20,7 +20,7 @@ CWE_SUMMARIES: dict[str, str] = {
     "CWE-94":  "Your code runs text as code (e.g. eval). If any of that text comes from a user, they can run their own code.",
     "CWE-95":  "Your code evaluates a string as code. Untrusted input here lets an attacker run whatever they want.",
     "CWE-502": "Your code unpacks saved data from an untrusted source. Crafted data can trick it into running malicious code (insecure deserialization).",
-    "CWE-611": "Your XML parser will follow external references. An attacker can use that to read local files or hit internal systems (XXE).",
+    "CWE-611": "Your XML parser can follow external references. An attacker could use that to read local files or reach internal systems (XXE).",
     "CWE-327": "Your code uses a broken or outdated encryption method. It can be cracked, so anything it protects isn't really safe.",
     "CWE-326": "Your code uses weak encryption strength. It may not actually protect the data it's meant to.",
     "CWE-328": "Your code uses a weak hash (like MD5 or SHA-1). These are broken for security use — switch to SHA-256 or better.",
@@ -152,3 +152,69 @@ def plain_summary(
     if scanner in SCANNER_DEFAULTS:
         return SCANNER_DEFAULTS[scanner]
     return description or "A potential security issue was found. Review it before shipping."
+
+
+# ── dependency summaries (runtime vs build-only aware) ───────────────────────
+# A vulnerable dependency's real-world risk hinges on whether it actually ships
+# in the running app or is only a build-time tool. We say which, in plain words,
+# so "6 HIGH" in the dev toolchain doesn't read like "6 HIGH in production".
+def dependency_summary(package: str, scope: str = "unknown") -> str:
+    """Plain-English summary for a vulnerable dependency.
+
+    scope: "runtime"      -> ships in the live app (real exposure)
+           "development"  -> a build-only tool, not shipped (no live exposure)
+           anything else  -> unknown; stay neutral.
+    """
+    if scope == "development":
+        return (f"'{package}' is a build-only tool — it runs on your computer while you build "
+                f"the app and is NOT part of what you ship to users, so your live app isn't "
+                f"exposed to this flaw. Still worth updating as good housekeeping.")
+    if scope == "runtime":
+        return (f"'{package}' is a code package your live app actually runs, and it has a known "
+                f"security flaw. Because it's part of what's exposed to the internet, update it "
+                f"to a fixed version to close the hole.")
+    return (f"The '{package}' package your project depends on has a known security flaw. "
+            f"Updating it to a fixed version closes the hole.")
+
+
+# ── uncertainty framing for code (SAST) findings ─────────────────────────────
+# Semgrep matches a PATTERN; it can be wrong. Say so, gently, so a false positive
+# (like a correct HTML-escaper that trips an XSS rule) doesn't read as a verdict.
+CODE_FINDING_CAVEAT = (
+    "A scanner flagged this code pattern — it can be a false alarm, so confirm it "
+    "applies to your case before changing anything."
+)
+
+
+# ── plain-English glossary ───────────────────────────────────────────────────
+# Shown once at the end of a scan, filtered to only the terms that actually
+# appeared, so a reader is never left guessing what a word means.
+GLOSSARY: dict[str, str] = {
+    "dependency": "a ready-made code package your project pulls in so you don't have to write it yourself.",
+    "build-only tool": "a package used only on your computer while building the app — it isn't shipped to users, so your live app isn't exposed to its flaws.",
+    "live app": "the actual app running on the internet that real users (and attackers) can reach.",
+    "secret": "a password, API key, or token — anything that proves who you are or grants access.",
+    "severity": "how serious an issue is, from most to least: critical, high, medium, low.",
+}
+
+
+def relevant_glossary(findings: list) -> list[tuple[str, str]]:
+    """Pick only the glossary terms that apply to THIS scan's findings."""
+    if not findings:
+        return []
+    scanners = {f.get("scanner") for f in findings}
+    scopes = {(f.get("details") or {}).get("dependency_scope") for f in findings}
+    is_dep = bool(scanners & {"pip-audit", "npm-audit"})
+    terms: list[str] = []
+    if is_dep:
+        terms.append("dependency")
+    if "development" in scopes:
+        terms.append("build-only tool")
+    if is_dep or "gitleaks" in scanners:
+        terms.append("live app")
+    if "gitleaks" in scanners:
+        terms.append("secret")
+    terms.append("severity")
+    # De-dup preserving order, only terms we actually define.
+    seen: set[str] = set()
+    return [(t, GLOSSARY[t]) for t in terms if t in GLOSSARY and not (t in seen or seen.add(t))]

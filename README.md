@@ -65,7 +65,11 @@ vulngate sarif findings.json --out results.sarif  # project a findings.json to S
 
 Outputs, every run:
 - a **pretty terminal summary** grouped by severity, each finding with a
-  plain-English line and a fix hint;
+  plain-English line and a fix hint. Vulnerable dependencies are labelled
+  **`in your live app`** vs **`build-only tool`** (a flaw in your build toolchain
+  is not the same risk as one in shipped code), code-pattern findings carry a
+  *"this can be a false alarm — confirm it applies"* caveat, and a short
+  **glossary** defines any jargon that appears;
 - **`findings.json`** — the normalized schema (see [`schemas/findings.schema.json`](schemas/findings.schema.json)),
   including a **scan receipt** (`scan.receipt`: commit, config hash, scanner
   versions, timestamps) so a report is self-describing and auditable;

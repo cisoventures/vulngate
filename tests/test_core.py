@@ -13,7 +13,10 @@ from vulngate.scanners.base import (completed, disabled, errored,
                                     not_applicable, unavailable)
 from vulngate.scanners.semgrep_scanner import _has_results, _native_identity
 from vulngate.detect import detect
-from vulngate.knowledge import plain_summary
+from vulngate.knowledge import (dependency_summary, plain_summary,
+                                relevant_glossary)
+from vulngate.scanners.npm_audit_scanner import _dev_scope
+from vulngate.scanners.pip_audit_scanner import _req_scope
 from vulngate.report import _short_rule, to_sarif
 from vulngate.schema import (Diagnostic, Finding, ScannerRun, at_or_above,
                              build_report, config_hash, fingerprint)
@@ -136,6 +139,62 @@ def test_sarif_subcommand_projects_findings_json(tmp_path, capsys):
     assert main(["sarif", str(tmp_path / "nope.json")]) == 2
 
 
+def test_dependency_summary_distinguishes_runtime_from_build_only():
+    dev = dependency_summary("wrangler", "development")
+    run = dependency_summary("lodash", "runtime")
+    unk = dependency_summary("foo", "unknown")
+    assert "build-only tool" in dev and "isn't exposed" in dev
+    assert "live app actually runs" in run and "exposed to the internet" in run
+    assert "known security flaw" in unk and "build-only" not in unk  # neutral fallback
+
+
+def test_npm_dev_scope_from_lockfile(tmp_path):
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "lockfileVersion": 3,
+        "packages": {
+            "": {"name": "root"},
+            "node_modules/lodash": {"version": "1"},                    # runtime (no dev flag)
+            "node_modules/wrangler": {"version": "1", "dev": True},     # build-only
+            "node_modules/esbuild": {"version": "1", "dev": True},      # build-only (nested below)
+            "node_modules/wrangler/node_modules/esbuild": {"version": "2", "dev": True},
+        },
+    }))
+    scope = _dev_scope(tmp_path)
+    assert scope["lodash"] == "runtime"
+    assert scope["wrangler"] == "development"
+    assert scope["esbuild"] == "development"
+
+
+def test_npm_dev_scope_any_runtime_occurrence_wins(tmp_path):
+    # A package that appears both as a dev and a prod dep is runtime-reachable.
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "lockfileVersion": 3,
+        "packages": {
+            "node_modules/x": {"version": "1", "dev": True},
+            "node_modules/a/node_modules/x": {"version": "2"},   # non-dev path
+        },
+    }))
+    assert _dev_scope(tmp_path)["x"] == "runtime"
+
+
+def test_pip_req_scope_from_filename():
+    assert _req_scope("requirements.txt") == "runtime"
+    assert _req_scope("requirements-dev.txt") == "development"
+    assert _req_scope("test-requirements.txt") == "development"
+    assert _req_scope("app/requirements.txt") == "runtime"
+
+
+def test_relevant_glossary_only_shows_applicable_terms():
+    dep_dev = {"scanner": "npm-audit", "details": {"dependency_scope": "development"}}
+    secret = {"scanner": "gitleaks", "details": {}}
+    terms = dict(relevant_glossary([dep_dev, secret]))
+    assert "dependency" in terms and "build-only tool" in terms and "secret" in terms
+    # a pure-SAST scan needs neither "dependency" nor "secret"
+    sast_only = dict(relevant_glossary([{"scanner": "semgrep", "details": {}}]))
+    assert "dependency" not in sast_only and "secret" not in sast_only and "severity" in sast_only
+    assert relevant_glossary([]) == []
+
+
 def test_semgrep_placeholder_fingerprint_keeps_distinct_lines_distinct():
     # Regression: Semgrep OSS stamps every finding with extra.fingerprint =
     # "requires login". Two DISTINCT matches of the same rule in the same file
@@ -173,6 +232,21 @@ def _report(**over):
     )
     base.update(over)
     return build_report(**base)
+
+
+def test_terminal_report_labels_scope_caveat_and_glossary():
+    from vulngate.report import terminal_report
+    dep = _finding(id="d", scanner="npm-audit", rule="GHSA-x", severity="high",
+                   file="package-lock.json", line=None,
+                   details={"package": "wrangler", "dependency_scope": "development"}).as_dict()
+    sast = _finding(id="s", scanner="semgrep", rule="r", severity="low").as_dict()
+    report = _report(findings=[], scanners=[ScannerRun("npm-audit", "1", "completed", 1)])
+    report["findings"] = [dep, sast]
+    out = terminal_report(report, color=False)
+    assert "build-only tool" in out                     # dependency scope label
+    assert "known issue" in out and "advisor" not in out  # plainer wording, no "advisory"
+    assert "false alarm" in out                          # SAST caveat present
+    assert "what these words mean" in out and "build-only tool —" in out  # glossary
 
 
 def test_build_report_summary_and_sarif():

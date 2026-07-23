@@ -10,6 +10,7 @@ import os
 import sys
 from typing import Any
 
+from . import knowledge
 from .schema import SEVERITIES
 
 # ── color handling ───────────────────────────────────────────────────────────
@@ -81,20 +82,27 @@ def terminal_report(report: dict[str, Any], color: bool = True) -> str:
 
     items: list[tuple[str, list[str]]] = []  # (severity, rendered lines)
 
-    # Code findings (SAST/secrets) render one block each.
+    # Code findings (SAST/secrets) render one block each. Semgrep matches a
+    # PATTERN and can be wrong, so its findings carry a gentle "confirm this"
+    # caveat; secrets (gitleaks) are high-confidence and don't.
     for f in findings:
         if f["scanner"] in _DEP:
             continue
         loc = f["file"] + (f":{f['line']}" if f.get("line") else "")
-        items.append((f["severity"], [
+        block = [
             f"{_tag(f['severity'])} {loc}  {_paint('[' + f['scanner'] + ']', 'dim', on)} {_short_rule(f['rule'])}",
             f"          {f['plain_summary']}",
-            _paint(f"          fix: {f['remediation_hint']}", "dim", on),
-        ]))
+        ]
+        if f["scanner"] == "semgrep":
+            block.append(_paint(f"          {knowledge.CODE_FINDING_CAVEAT}", "dim", on))
+        block.append(_paint(f"          fix: {f['remediation_hint']}", "dim", on))
+        items.append((f["severity"], block))
 
-    # Dependency findings collapse per package — one line for N advisories,
-    # so a noisy transitive tree doesn't bury the code-level issues. (The full
-    # per-advisory list still lives in findings.json.)
+    # Dependency findings collapse per package — one line for N issues, so a
+    # noisy transitive tree doesn't bury code-level issues. Each is tagged with
+    # whether the package is in the LIVE APP or a BUILD-ONLY tool, so severity
+    # reads in context. (The full per-advisory list still lives in findings.json.)
+    _SCOPE_LABEL = {"development": "build-only tool", "runtime": "in your live app"}
     groups: dict[tuple, list] = {}
     for f in findings:
         if f["scanner"] in _DEP:
@@ -102,8 +110,11 @@ def terminal_report(report: dict[str, Any], color: bool = True) -> str:
     for (scanner, file, pkg), fs in groups.items():
         sev, n = _most_severe(fs), len(fs)
         ids = ", ".join(x["rule"] for x in fs[:4]) + (f"  (+{n - 4} more)" if n > 4 else "")
+        scope = (fs[0].get("details") or {}).get("dependency_scope")
+        scope_txt = f"  ·  {_paint(_SCOPE_LABEL[scope], 'dim', on)}" if scope in _SCOPE_LABEL else ""
+        n_txt = f"{n} known issue" + ("" if n == 1 else "s")
         items.append((sev, [
-            f"{_tag(sev)} {file}  {_paint('[' + scanner + ']', 'dim', on)} {pkg} — {n} known advisor{'y' if n == 1 else 'ies'}",
+            f"{_tag(sev)} {file}  {_paint('[' + scanner + ']', 'dim', on)} {pkg} — {n_txt}{scope_txt}",
             f"          {fs[0]['plain_summary']}",
             _paint(f"          fix: update {pkg} to a patched version  ·  {ids}", "dim", on),
         ]))
@@ -120,6 +131,14 @@ def terminal_report(report: dict[str, Any], color: bool = True) -> str:
     for d in report.get("diagnostics", []):
         lines.append(_paint(f"note: {d['message']}", "dim", on))
     if report.get("diagnostics"):
+        lines.append("")
+
+    # Plain-English glossary — only the terms that actually appear this scan.
+    glossary = knowledge.relevant_glossary(findings)
+    if glossary:
+        lines.append(_paint("what these words mean:", "dim", on))
+        for term, definition in glossary:
+            lines.append(_paint(f"  {term} — {definition}", "dim", on))
         lines.append("")
 
     counts = "  ·  ".join(

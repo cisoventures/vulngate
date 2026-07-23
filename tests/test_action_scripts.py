@@ -37,3 +37,15 @@ def test_verdict_ignores_stale_exit_code():
 def test_verdict_no_coverage():
     md = render_markdown(_data(0, [], status="no_coverage"))
     assert "No coverage" in md
+
+
+def test_comment_language_scope_caveat_and_glossary():
+    dep = {"scanner": "npm-audit", "rule": "GHSA-x", "severity": "high",
+           "file": "package-lock.json", "line": None, "plain_summary": "p",
+           "description": "d", "remediation_hint": "x",
+           "details": {"package": "wrangler", "dependency_scope": "development"}}
+    md = render_markdown(_data(1, [_finding("low"), dep]))
+    assert "build-only tool" in md                      # dependency scope label
+    assert "known issue" in md and "advisor" not in md    # plainer wording
+    assert "false alarm" in md                            # SAST caveat for the semgrep finding
+    assert "What these words mean" in md and "build-only tool**" in md  # glossary section
