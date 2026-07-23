@@ -25,6 +25,7 @@ DEFAULTS = {
     "ignore": [],
     "no_deps": False,
     "dependency_severity": "medium",
+    "allow_no_coverage": False,   # a gate fails closed when no scanner ran
 }
 _CANDIDATES = ("vulngate.toml", ".vulngate.toml")
 

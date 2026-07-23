@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from ..knowledge import plain_summary
@@ -12,6 +14,12 @@ from .base import (ScanOutput, completed, errored, normalize_cwes, rel_posix,
 
 NAME = "semgrep"
 _SEV = {"ERROR": "high", "WARNING": "medium", "INFO": "low"}
+
+
+def _has_results(data: object) -> bool:
+    """A genuine semgrep report always carries a 'results' key (even when empty).
+    Its absence means the scan didn't actually run — not that the code is clean."""
+    return isinstance(data, dict) and "results" in data
 
 
 def _version(cmd: list[str]) -> str | None:
@@ -27,24 +35,37 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
         return skipped(NAME, "semgrep is not installed (pip install semgrep)")
 
     version = _version(cmd)
-    # p/default is a broad community ruleset that works WITHOUT telemetry.
-    # (`--config auto` refuses to run when --metrics=off, and we won't force
-    # telemetry on users of a security tool.)
-    proc = run_cmd(
-        [*cmd, "scan", "--config", "p/default", "--json", "--quiet",
-         "--metrics=off", "--disable-version-check", str(root)],
-        cwd=root, timeout=600,
-    )
+    # Give semgrep a writable state dir — in restricted sandboxes it crashes when
+    # it can't write ~/.semgrep, which previously slipped through as "0 findings".
+    with tempfile.TemporaryDirectory(prefix="vulngate-semgrep-") as tmp:
+        sg_env = {
+            "SEMGREP_SETTINGS_FILE": os.path.join(tmp, "settings.yml"),
+            "XDG_CONFIG_HOME": tmp,
+            "XDG_CACHE_HOME": tmp,
+        }
+        # p/default is a broad community ruleset that works WITHOUT telemetry.
+        # (`--config auto` refuses to run when --metrics=off, and we won't force
+        # telemetry on users of a security tool.)
+        proc = run_cmd(
+            [*cmd, "scan", "--config", "p/default", "--json", "--quiet",
+             "--metrics=off", "--disable-version-check", str(root)],
+            cwd=root, timeout=600, env=sg_env,
+        )
     if proc is None:
         return errored(NAME, version, "semgrep timed out or failed to launch")
     if proc.returncode >= 2:  # 0 = clean, 1 = findings, >=2 = real error
         tail = (proc.stderr or "").strip()[-300:]
         return errored(NAME, version, f"semgrep failed (exit {proc.returncode}): {tail}")
     try:
-        data = json.loads(proc.stdout or "{}")
+        data = json.loads(proc.stdout or "")
     except json.JSONDecodeError:
         tail = (proc.stderr or "").strip()[-300:]
-        return errored(NAME, version, f"could not parse semgrep output: {tail}")
+        return errored(NAME, version, f"semgrep produced no parseable output (exit {proc.returncode}): {tail}")
+    if not _has_results(data):
+        # Empty '{}' or a non-report payload means semgrep didn't actually scan
+        # (e.g. a crash that still exited 1) — never treat that as "0 findings".
+        tail = (proc.stderr or "").strip()[-300:]
+        return errored(NAME, version, f"semgrep did not return a valid report (exit {proc.returncode}): {tail}")
 
     findings: list[Finding] = []
     for r in data.get("results", []):

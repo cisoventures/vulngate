@@ -83,21 +83,26 @@ def normalize_cwes(raw) -> list[str]:
     return out
 
 
-def run_cmd(cmd: list[str], cwd: Optional[Path] = None, timeout: int = 300):
+def run_cmd(cmd: list[str], cwd: Optional[Path] = None, timeout: int = 300,
+            env: Optional[dict] = None):
     """Run a scanner. Returns CompletedProcess, or None on launch failure/timeout.
 
     When the tool was resolved by absolute path (e.g. a pip user-base bin that
     isn't on PATH), put its directory on the child's PATH so tools that exec
-    sibling helpers — semgrep -> pysemgrep — can find them.
+    sibling helpers — semgrep -> pysemgrep — can find them. `env` merges extra
+    variables into the child environment (e.g. a writable state dir for semgrep).
     """
-    env = None
+    child_env: Optional[dict] = None
     exe = cmd[0]
-    if os.path.isabs(exe):
-        env = dict(os.environ)
-        env["PATH"] = os.path.dirname(exe) + os.pathsep + env.get("PATH", "")
+    if os.path.isabs(exe) or env:
+        child_env = dict(os.environ)
+        if os.path.isabs(exe):
+            child_env["PATH"] = os.path.dirname(exe) + os.pathsep + child_env.get("PATH", "")
+        if env:
+            child_env.update(env)
     try:
         return subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=child_env,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None

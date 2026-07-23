@@ -4,9 +4,12 @@ The scanner adapters themselves are exercised end-to-end against
 test-fixtures/ (see the e2e job in CI); these cover the deterministic core.
 """
 
+import json
 from pathlib import Path
 
+from vulngate.cli import main
 from vulngate.config import ConfigError, load_config
+from vulngate.scanners.semgrep_scanner import _has_results
 from vulngate.detect import detect
 from vulngate.knowledge import plain_summary
 from vulngate.report import _short_rule, to_sarif
@@ -90,6 +93,21 @@ def test_short_rule_display():
     # dotless ids (advisories, npm) pass through untouched
     assert _short_rule("GHSA-jf85-cpcp-j695") == "GHSA-jf85-cpcp-j695"
     assert _short_rule("PYSEC-2018-28") == "PYSEC-2018-28"
+
+
+def test_gate_fails_closed_on_no_coverage(tmp_path):
+    data = {"scan": {"status": "no_coverage", "fail_on": "high", "exit_code": 0}, "findings": []}
+    p = tmp_path / "f.json"
+    p.write_text(json.dumps(data))
+    assert main(["gate", str(p), "--quiet"]) == 2                        # fail closed
+    assert main(["gate", str(p), "--quiet", "--allow-no-coverage"]) == 0  # explicit opt-out
+
+
+def test_semgrep_crash_output_treated_as_invalid():
+    assert _has_results({"results": []})   # a real scan with zero findings
+    assert not _has_results({})            # crash that emitted empty '{}'
+    assert not _has_results([])            # non-report payload
+    assert not _has_results(None)
 
 
 def test_build_report_summary_and_sarif():

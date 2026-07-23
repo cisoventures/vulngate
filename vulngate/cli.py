@@ -40,6 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     gate = sub.add_parser("gate", help="re-evaluate an existing findings.json against a threshold (exit code only)")
     gate.add_argument("findings", nargs="?", default="findings.json", help="path to a findings.json (default: findings.json)")
     gate.add_argument("--fail-on", choices=["critical", "high", "medium", "low"], help="severity threshold (default: the value recorded in the file)")
+    gate.add_argument("--allow-no-coverage", action="store_true", help="pass instead of failing when no scanner ran (default: fail closed)")
     gate.add_argument("--quiet", action="store_true", help="suppress the one-line verdict")
 
     scan = sub.add_parser("scan", help="scan a repository or path")
@@ -51,6 +52,7 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--exclude", action="append", default=[], help="glob to exclude (repeatable)")
     scan.add_argument("--no-deps", action="store_true", default=None, help="pass --no-deps to pip-audit (skip resolution; for fully-pinned requirement files)")
     scan.add_argument("--dep-severity", choices=["critical", "high", "medium", "low"], help="severity for dependency findings lacking a CVSS score (default: medium)")
+    scan.add_argument("--allow-no-coverage", action="store_true", default=None, help="exit 0 instead of 2 when no scanner ran (default: fail closed)")
     scan.add_argument("--no-color", action="store_true", help="disable colored output")
     scan.add_argument("--quiet", action="store_true", help="suppress the terminal summary")
     return p
@@ -71,6 +73,7 @@ def _run_scan(args) -> int:
     exclude = list(cfg["exclude"]) + list(args.exclude)
     disabled = set(cfg["disable"])
     ignore = set(cfg["ignore"])
+    allow_no_coverage = args.allow_no_coverage if args.allow_no_coverage is not None else cfg["allow_no_coverage"]
     opts = {
         "no_deps": args.no_deps if args.no_deps is not None else cfg["no_deps"],
         "dependency_severity": args.dep_severity or cfg["dependency_severity"],
@@ -109,12 +112,15 @@ def _run_scan(args) -> int:
     if completed == 0 and errored > 0:
         scan_status, tool_error = "error", True
     elif completed == 0:
-        # Nothing actually ran — never report this as a clean "complete" pass.
-        scan_status, tool_error = "no_coverage", False
+        # Nothing actually ran. Fail CLOSED — a security gate must not report a
+        # clean pass when it scanned nothing (opt out with --allow-no-coverage).
+        scan_status = "no_coverage"
+        tool_error = not allow_no_coverage
         diags.append(Diagnostic(
             scanner="vulngate", level="warning", code="no_coverage",
             message="No scanner produced results — coverage is zero. Install scanners "
-                    "(pip install 'vulngate[scanners]'; brew install gitleaks).",
+                    "(pip install 'vulngate[scanners]'; brew install gitleaks), or pass "
+                    "--allow-no-coverage to accept it.",
         ))
     elif errored or any(r.status == "skipped" for r in runs):
         scan_status, tool_error = "partial", False
@@ -153,7 +159,13 @@ def _run_gate(args) -> int:
     except (json.JSONDecodeError, OSError) as e:
         print(f"vulngate: could not read {args.findings}: {e}", file=sys.stderr)
         return 2
-    if data.get("scan", {}).get("status") == "error":
+    status = data.get("scan", {}).get("status")
+    if status == "error":
+        return 2
+    if status == "no_coverage" and not args.allow_no_coverage:
+        if not args.quiet:
+            print("vulngate gate: FAIL — no scanner ran (zero coverage). "
+                  "Pass --allow-no-coverage to override.", file=sys.stderr)
         return 2
     fail_on = args.fail_on or data.get("scan", {}).get("fail_on", "high")
     findings = data.get("findings", [])
