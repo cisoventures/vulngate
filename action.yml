@@ -43,7 +43,9 @@ runs:
 
     - name: Install vulngate + scanners
       shell: bash
-      run: pip install "vulngate[scanners]"
+      # Install from the action's own checkout — self-contained, no PyPI dependency,
+      # and always the version pinned by the `uses:` ref.
+      run: pip install "${{ github.action_path }}[scanners]"
 
     - name: Install gitleaks
       if: inputs.install-gitleaks == 'true'
@@ -71,7 +73,7 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: python "${{ github.action_path }}/scripts/diff_filter.py" findings.json
+      run: python "${{ github.action_path }}/action/scripts/diff_filter.py" findings.json
 
     - name: LLM triage (optional, BYO key)
       if: inputs.anthropic-api-key != ''
@@ -81,7 +83,7 @@ runs:
         ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
       run: |
         pip install anthropic >/dev/null
-        python "${{ github.action_path }}/scripts/triage.py" findings.json
+        python "${{ github.action_path }}/action/scripts/triage.py" findings.json
 
     - name: Upload SARIF
       if: inputs.upload-sarif == 'true' && always()
@@ -94,7 +96,7 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: python "${{ github.action_path }}/scripts/pr_comment.py" findings.json
+      run: python "${{ github.action_path }}/action/scripts/pr_comment.py" findings.json
 
     - name: Enforce threshold
       shell: bash

@@ -41,7 +41,9 @@ scanners to widen coverage.
 ## Install
 
 ```bash
-# Core + the Python scanners (Semgrep, pip-audit) in one shot:
+# Core + the Python scanners (Semgrep, pip-audit) in one shot.
+# PyPI publish is pending — until then, install from source:
+#   pip install "vulngate[scanners] @ git+https://github.com/cisoventures/vulngate.git"
 pip install "vulngate[scanners]"
 
 # Gitleaks is a Go binary (optional, for secret scanning):
