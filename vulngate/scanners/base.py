@@ -108,24 +108,51 @@ def run_cmd(cmd: list[str], cwd: Optional[Path] = None, timeout: int = 300,
         return None
 
 
-def skipped(name: str, reason: str) -> ScanOutput:
-    """Scanner not available — record a skip + a friendly diagnostic, never crash."""
+def not_applicable(name: str, reason: str) -> ScanOutput:
+    """Nothing for this scanner to scan (no matching files/manifests).
+
+    Not a problem — it's honest coverage accounting, so the diagnostic is info,
+    not a warning. `applicable=False` keeps it out of scan.status coverage gaps.
+    """
     return ScanOutput(
-        run=ScannerRun(name=name, version=None, status="skipped", finding_count=0, message=reason),
+        run=ScannerRun(name=name, version=None, status="not_applicable",
+                       finding_count=0, message=reason, applicable=False),
+        diagnostics=[Diagnostic(scanner=name, level="info", code="scanner_not_applicable", message=reason)],
+    )
+
+
+def unavailable(name: str, reason: str) -> ScanOutput:
+    """The tool applies here but isn't installed — a real coverage gap, so warn.
+
+    `applicable=True, available=False` makes scan.status downgrade to 'partial'."""
+    return ScanOutput(
+        run=ScannerRun(name=name, version=None, status="unavailable",
+                       finding_count=0, message=reason, applicable=True, available=False),
         diagnostics=[Diagnostic(scanner=name, level="warning", code="scanner_not_installed", message=reason)],
     )
 
 
-def errored(name: str, version: Optional[str], message: str) -> ScanOutput:
-    """Scanner was present but failed to run/parse — surface it, keep going."""
+def disabled(name: str, reason: str) -> ScanOutput:
+    """Turned off in config — user's choice, so applicability is never probed."""
     return ScanOutput(
-        run=ScannerRun(name=name, version=version, status="error", finding_count=0, message=message),
+        run=ScannerRun(name=name, version=None, status="disabled",
+                       finding_count=0, message=reason),
+        diagnostics=[Diagnostic(scanner=name, level="info", code="scanner_disabled", message=reason)],
+    )
+
+
+def errored(name: str, version: Optional[str], message: str) -> ScanOutput:
+    """Scanner was present + applicable but failed to run/parse — surface it, keep going."""
+    return ScanOutput(
+        run=ScannerRun(name=name, version=version, status="error", finding_count=0,
+                       message=message, applicable=True, available=True),
         diagnostics=[Diagnostic(scanner=name, level="warning", code="scanner_error", message=message)],
     )
 
 
 def completed(name: str, version: Optional[str], findings: list[Finding]) -> ScanOutput:
     return ScanOutput(
-        run=ScannerRun(name=name, version=version, status="completed", finding_count=len(findings)),
+        run=ScannerRun(name=name, version=version, status="completed",
+                       finding_count=len(findings), applicable=True, available=True),
         findings=findings,
     )

@@ -9,8 +9,8 @@ from pathlib import Path
 
 from ..knowledge import plain_summary
 from ..schema import Diagnostic, Finding, fingerprint
-from .base import (ScanOutput, completed, errored, normalize_cwes, rel_posix,
-                   resolve_cmd, run_cmd, skipped)
+from .base import (ScanOutput, completed, errored, normalize_cwes,
+                   not_applicable, rel_posix, resolve_cmd, run_cmd, unavailable)
 
 NAME = "semgrep"
 _SEV = {"ERROR": "high", "WARNING": "medium", "INFO": "low"}
@@ -29,10 +29,10 @@ def _version(cmd: list[str]) -> str | None:
 
 def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
     if not det.languages:
-        return skipped(NAME, "no source files detected to analyze")
+        return not_applicable(NAME, "no source files detected to analyze")
     cmd = resolve_cmd([NAME])
     if not cmd:
-        return skipped(NAME, "semgrep is not installed (pip install semgrep)")
+        return unavailable(NAME, "semgrep is not installed (pip install semgrep)")
 
     version = _version(cmd)
     # Give semgrep a writable state dir — in restricted sandboxes it crashes when

@@ -32,8 +32,12 @@ vulngate scan test-fixtures/vulnerable-sample   # end-to-end; should exit 1
 
 1. Create `vulngate/scanners/<tool>_scanner.py` exposing
    `run(root: Path, det) -> ScanOutput`.
-2. Use the helpers in `scanners/base.py` (`resolve_cmd`, `run_cmd`, `skipped`,
-   `errored`, `completed`, `rel_posix`, `normalize_cwes`).
+2. Use the helpers in `scanners/base.py` (`resolve_cmd`, `run_cmd`,
+   `not_applicable`/`unavailable`/`disabled`, `errored`, `completed`,
+   `rel_posix`, `normalize_cwes`). Return `not_applicable(...)` when the repo has
+   nothing for the tool to scan, `unavailable(...)` when the tool isn't installed
+   — the distinction drives `scan.status` (a missing-but-applicable scanner is a
+   coverage gap → `partial`, not silently ignored).
 3. Map the tool's native severities onto `critical|high|medium|low`.
 4. Build each `Finding` via `schema.fingerprint(...)` for a stable id. **Never**
    put secret values or source snippets into a finding — that's a hard rule.

@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 
 from ..schema import Finding, fingerprint
-from .base import (ScanOutput, completed, errored, normalize_cwes, rel_posix,
-                   resolve_cmd, run_cmd, skipped)
+from .base import (ScanOutput, completed, errored, normalize_cwes,
+                   not_applicable, rel_posix, resolve_cmd, run_cmd, unavailable)
 
 NAME = "npm-audit"
 _SEV = {"critical": "critical", "high": "high", "moderate": "medium", "low": "low", "info": "low"}
@@ -30,10 +30,10 @@ def _version(cmd: list[str]) -> str | None:
 
 def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
     if not det.npm_lock_dirs:
-        return skipped(NAME, "no package-lock.json found to audit")
+        return not_applicable(NAME, "no package-lock.json found to audit")
     cmd = resolve_cmd(["npm"])
     if not cmd:
-        return skipped(NAME, "npm is not installed")
+        return unavailable(NAME, "npm is not installed")
 
     version = _version(cmd)
     findings: list[Finding] = []

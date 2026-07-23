@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 from ..schema import Finding, fingerprint
-from .base import (ScanOutput, completed, errored, rel_posix, resolve_cmd,
-                   run_cmd, skipped)
+from .base import (ScanOutput, completed, errored, not_applicable, rel_posix,
+                   resolve_cmd, run_cmd, unavailable)
 
 NAME = "pip-audit"
 
@@ -30,10 +30,10 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
     severity = opts.get("dependency_severity", "medium")
     no_deps = opts.get("no_deps", False)
     if not det.py_requirements:
-        return skipped(NAME, "no requirements*.txt found to audit")
+        return not_applicable(NAME, "no requirements*.txt found to audit")
     cmd = resolve_cmd([NAME], module="pip_audit")
     if not cmd:
-        return skipped(NAME, "pip-audit is not installed (pip install pip-audit)")
+        return unavailable(NAME, "pip-audit is not installed (pip install pip-audit)")
 
     version = _version(cmd)
     findings: list[Finding] = []

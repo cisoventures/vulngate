@@ -13,7 +13,7 @@ from pathlib import Path
 from ..knowledge import plain_summary
 from ..schema import Finding, fingerprint
 from .base import (ScanOutput, completed, errored, rel_posix, resolve_cmd,
-                   run_cmd, skipped)
+                   run_cmd, unavailable)
 
 NAME = "gitleaks"
 
@@ -26,7 +26,7 @@ def _version(cmd: list[str]) -> str | None:
 def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
     cmd = resolve_cmd([NAME])
     if not cmd:
-        return skipped(NAME, "gitleaks is not installed (see https://github.com/gitleaks/gitleaks)")
+        return unavailable(NAME, "gitleaks is not installed (see https://github.com/gitleaks/gitleaks)")
 
     version = _version(cmd)
     # gitleaks 8.19+ uses the `dir` subcommand to scan files (the old

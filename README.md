@@ -59,13 +59,23 @@ stdlib and will run, degrading gracefully to whatever scanners you have.
 vulngate scan .                      # scan the current repo
 vulngate scan ./src --fail-on medium # stricter threshold
 vulngate scan . --sarif results.sarif
+vulngate gate findings.json          # re-check an existing report against the threshold (exit code only)
+vulngate sarif findings.json --out results.sarif  # project a findings.json to SARIF
 ```
 
 Outputs, every run:
 - a **pretty terminal summary** grouped by severity, each finding with a
   plain-English line and a fix hint;
-- **`findings.json`** — the normalized schema (see [`schemas/findings.schema.json`](schemas/findings.schema.json));
+- **`findings.json`** — the normalized schema (see [`schemas/findings.schema.json`](schemas/findings.schema.json)),
+  including a **scan receipt** (`scan.receipt`: commit, config hash, scanner
+  versions, timestamps) so a report is self-describing and auditable;
 - optional **SARIF** for GitHub code scanning.
+
+Every scanner's outcome is recorded with an honest status —
+`completed` · `not_applicable` (nothing to scan) · `unavailable` (not installed)
+· `disabled` (config) · `error` — and the overall `scan.status`
+(`complete` / `partial` / `no_coverage` / `error`) is derived from them, so a
+`0` findings result is never confused with a scanner that didn't run.
 
 ### Exit codes (CI-friendly)
 

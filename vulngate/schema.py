@@ -12,6 +12,7 @@ Code context is fetched live from the working tree by the MCP layer, never persi
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
 
@@ -67,12 +68,28 @@ class Finding:
 
 @dataclass
 class ScannerRun:
-    """One scanner's execution record — surfaced in scan.scanners[]."""
+    """One scanner's execution record — surfaced in scan.scanners[].
+
+    `status` distinguishes *why* a scanner produced no findings so a zero is
+    never ambiguous:
+      completed       ran and reported (0+ findings)
+      not_applicable  nothing for it to scan (no matching files/manifests)
+      disabled        turned off in config
+      unavailable     the tool isn't installed
+      error           present + applicable, but failed to run or parse
+
+    `applicable` (did this repo have work for the scanner?) and `available`
+    (is the tool installed?) are the orthogonal facts scan.status derives from;
+    either may be null when that fact wasn't determined (e.g. a disabled scanner
+    is never probed for applicability).
+    """
     name: str
     version: Optional[str]
-    status: str                   # completed | skipped | error
+    status: str                   # completed | not_applicable | disabled | unavailable | error
     finding_count: int = 0
     message: Optional[str] = None
+    applicable: Optional[bool] = None
+    available: Optional[bool] = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -93,15 +110,28 @@ class Diagnostic:
         return asdict(self)
 
 
+def config_hash(resolved_config: dict[str, Any]) -> str:
+    """Stable sha256 over the resolved config dict — provenance for the receipt.
+
+    Sorted-key JSON so the same effective settings always hash the same, letting
+    a reviewer confirm two scans ran under identical policy.
+    """
+    canonical = json.dumps(resolved_config, sort_keys=True, default=str)
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def build_report(
     *,
     tool_version: str,
     target: str,
     started_at: str,
+    completed_at: str,
     duration_ms: int,
     fail_on: str,
     scan_status: str,
     exit_code: int,
+    commit: Optional[str],
+    config_hash: str,
     scanners: list[ScannerRun],
     findings: list[Finding],
     diagnostics: list[Diagnostic],
@@ -121,8 +151,15 @@ def build_report(
             "started_at": started_at,
             "duration_ms": duration_ms,
             "fail_on": fail_on,
-            "status": scan_status,        # complete | partial | error
+            "status": scan_status,        # complete | partial | no_coverage | error
             "exit_code": exit_code,
+            "receipt": {
+                "commit": commit,
+                "config_hash": config_hash,
+                "scanner_versions": {s.name: s.version for s in scanners},
+                "started_at": started_at,
+                "completed_at": completed_at,
+            },
             "scanners": [s.as_dict() for s in scanners],
         },
         "summary": summary_block,

@@ -10,7 +10,7 @@
     "schema_version": {"type": "string", "const": "1.0.0"},
     "scan": {
       "type": "object",
-      "required": ["tool_version", "target", "started_at", "duration_ms", "fail_on", "status", "exit_code", "scanners"],
+      "required": ["tool_version", "target", "started_at", "duration_ms", "fail_on", "status", "exit_code", "receipt", "scanners"],
       "additionalProperties": false,
       "properties": {
         "tool_version": {"type": "string"},
@@ -20,6 +20,22 @@
         "fail_on": {"enum": ["critical", "high", "medium", "low"]},
         "status": {"enum": ["complete", "partial", "no_coverage", "error"]},
         "exit_code": {"enum": [0, 1, 2]},
+        "receipt": {
+          "type": "object",
+          "description": "provenance so a findings.json is self-describing and auditable",
+          "required": ["commit", "config_hash", "scanner_versions", "started_at", "completed_at"],
+          "additionalProperties": false,
+          "properties": {
+            "commit": {"type": ["string", "null"], "description": "git HEAD SHA, or null outside a repo"},
+            "config_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "scanner_versions": {
+              "type": "object",
+              "additionalProperties": {"type": ["string", "null"]}
+            },
+            "started_at": {"type": "string", "format": "date-time"},
+            "completed_at": {"type": "string", "format": "date-time"}
+          }
+        },
         "scanners": {
           "type": "array",
           "items": {
@@ -29,9 +45,11 @@
             "properties": {
               "name": {"type": "string"},
               "version": {"type": ["string", "null"]},
-              "status": {"enum": ["completed", "skipped", "error"]},
+              "status": {"enum": ["completed", "not_applicable", "disabled", "unavailable", "error"]},
               "finding_count": {"type": "integer", "minimum": 0},
-              "message": {"type": ["string", "null"]}
+              "message": {"type": ["string", "null"]},
+              "applicable": {"type": ["boolean", "null"]},
+              "available": {"type": ["boolean", "null"]}
             }
           }
         }

@@ -7,14 +7,16 @@ test-fixtures/ (see the e2e job in CI); these cover the deterministic core.
 import json
 from pathlib import Path
 
-from vulngate.cli import main
+from vulngate.cli import derive_scan_status, main
 from vulngate.config import ConfigError, load_config
+from vulngate.scanners.base import (completed, disabled, errored,
+                                    not_applicable, unavailable)
 from vulngate.scanners.semgrep_scanner import _has_results
 from vulngate.detect import detect
 from vulngate.knowledge import plain_summary
 from vulngate.report import _short_rule, to_sarif
 from vulngate.schema import (Diagnostic, Finding, ScannerRun, at_or_above,
-                             build_report, fingerprint)
+                             build_report, config_hash, fingerprint)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "test-fixtures" / "vulnerable-sample"
 
@@ -103,6 +105,23 @@ def test_gate_fails_closed_on_no_coverage(tmp_path):
     assert main(["gate", str(p), "--quiet", "--allow-no-coverage"]) == 0  # explicit opt-out
 
 
+def test_sarif_subcommand_projects_findings_json(tmp_path, capsys):
+    report = _report()
+    fp = tmp_path / "findings.json"
+    fp.write_text(json.dumps(report))
+    # --out writes a file
+    out = tmp_path / "out.sarif"
+    assert main(["sarif", str(fp), "--out", str(out)]) == 0
+    sarif = json.loads(out.read_text())
+    assert sarif["version"] == "2.1.0" and len(sarif["runs"][0]["results"]) == 2
+    # no --out streams to stdout
+    capsys.readouterr()
+    assert main(["sarif", str(fp)]) == 0
+    assert '"version": "2.1.0"' in capsys.readouterr().out
+    # missing file -> exit 2 (matches gate/scan tool-error convention)
+    assert main(["sarif", str(tmp_path / "nope.json")]) == 2
+
+
 def test_semgrep_crash_output_treated_as_invalid():
     assert _has_results({"results": []})   # a real scan with zero findings
     assert not _has_results({})            # crash that emitted empty '{}'
@@ -110,14 +129,23 @@ def test_semgrep_crash_output_treated_as_invalid():
     assert not _has_results(None)
 
 
-def test_build_report_summary_and_sarif():
-    findings = [_finding(id="a", severity="high"), _finding(id="b", severity="low", file="b.py", line=None)]
-    report = build_report(
+def _report(**over):
+    findings = over.pop("findings", [_finding(id="a", severity="high"),
+                                     _finding(id="b", severity="low", file="b.py", line=None)])
+    base = dict(
         tool_version="0.1.0", target=".", started_at="2026-07-23T00:00:00Z",
-        duration_ms=5, fail_on="high", scan_status="complete", exit_code=1,
-        scanners=[ScannerRun("semgrep", "1.0", "completed", 2)],
-        findings=findings, diagnostics=[Diagnostic("gitleaks", "warning", "scanner_not_installed", "nope")],
+        completed_at="2026-07-23T00:00:05Z", duration_ms=5, fail_on="high",
+        scan_status="complete", exit_code=1, commit="abc123",
+        config_hash="sha256:" + "0" * 64,
+        scanners=[ScannerRun("semgrep", "1.0", "completed", 2, applicable=True, available=True)],
+        diagnostics=[], findings=findings,
     )
+    base.update(over)
+    return build_report(**base)
+
+
+def test_build_report_summary_and_sarif():
+    report = _report()
     assert report["summary"] == {"total": 2, "critical": 0, "high": 1, "medium": 0, "low": 1}
     sarif = to_sarif(report)
     assert sarif["version"] == "2.1.0"
@@ -125,3 +153,56 @@ def test_build_report_summary_and_sarif():
     # null-line finding must omit region but keep artifactLocation
     locs = [r["locations"][0]["physicalLocation"] for r in sarif["runs"][0]["results"]]
     assert any("region" not in pl for pl in locs)
+
+
+def test_scan_receipt_present_and_provenance():
+    report = _report()
+    receipt = report["scan"]["receipt"]
+    assert receipt["commit"] == "abc123"
+    assert receipt["config_hash"].startswith("sha256:")
+    assert receipt["scanner_versions"] == {"semgrep": "1.0"}          # name -> version
+    assert receipt["started_at"] == "2026-07-23T00:00:00Z"
+    assert receipt["completed_at"] == "2026-07-23T00:00:05Z"
+
+
+def test_config_hash_is_stable_and_order_independent():
+    a = config_hash({"fail_on": "high", "exclude": ["a", "b"]})
+    b = config_hash({"exclude": ["a", "b"], "fail_on": "high"})   # key order
+    assert a == b and a.startswith("sha256:")
+    assert config_hash({"fail_on": "low"}) != a                   # different policy -> different hash
+
+
+def _run(name, status, applicable=None, available=None):
+    return ScannerRun(name=name, version=None, status=status,
+                      applicable=applicable, available=available)
+
+
+def test_scanner_status_helpers_set_applicable_available():
+    assert not_applicable("x", "r").run.status == "not_applicable"
+    assert not_applicable("x", "r").run.applicable is False
+    assert unavailable("x", "r").run.applicable is True and unavailable("x", "r").run.available is False
+    assert disabled("x", "r").run.status == "disabled"
+    assert errored("x", None, "boom").run.applicable is True
+    assert completed("x", "1.0", []).run.available is True
+
+
+def test_derive_scan_status_taxonomy():
+    # every applicable scanner completed -> complete (n/a and disabled don't count)
+    assert derive_scan_status([
+        completed("semgrep", "1", []).run, completed("gitleaks", "1", []).run,
+        not_applicable("pip-audit", "r").run, disabled("npm-audit", "r").run,
+    ]) == "complete"
+    # an applicable-but-unavailable scanner is a coverage gap -> partial
+    assert derive_scan_status([
+        completed("semgrep", "1", []).run, unavailable("gitleaks", "r").run,
+    ]) == "partial"
+    # an applicable scanner that errored, alongside a success -> partial
+    assert derive_scan_status([
+        completed("semgrep", "1", []).run, errored("gitleaks", "1", "boom").run,
+    ]) == "partial"
+    # nothing completed, an error present -> error
+    assert derive_scan_status([errored("semgrep", "1", "boom").run]) == "error"
+    # nothing completed, only n/a + disabled -> no_coverage (fail closed upstream)
+    assert derive_scan_status([
+        not_applicable("pip-audit", "r").run, disabled("npm-audit", "r").run,
+    ]) == "no_coverage"

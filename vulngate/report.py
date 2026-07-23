@@ -52,15 +52,21 @@ def terminal_report(report: dict[str, Any], color: bool = True) -> str:
     lines.append(_paint(title, "bold", on))
     lines.append("─" * min(len(title), 72))
 
-    # Scanner status line.
+    # Scanner status line — a glyph per outcome so a "0" is never ambiguous:
+    #   ✓N completed · ✗ error · ∅ not installed · – n/a · ⊘ disabled
     chips = []
     for s in scan["scanners"]:
-        if s["status"] == "completed":
+        st = s["status"]
+        if st == "completed":
             chips.append(f"{s['name']} {_paint('✓', 'green', on)}{s['finding_count']}")
-        elif s["status"] == "skipped":
-            chips.append(_paint(f"{s['name']} ∅", "dim", on))
-        else:
+        elif st == "error":
             chips.append(_paint(f"{s['name']} ✗", "high", on))
+        elif st == "unavailable":
+            chips.append(_paint(f"{s['name']} ∅", "dim", on))
+        elif st == "disabled":
+            chips.append(_paint(f"{s['name']} ⊘", "dim", on))
+        else:  # not_applicable (or any future non-run state)
+            chips.append(_paint(f"{s['name']} –", "dim", on))
     lines.append("scanners: " + "   ".join(chips))
     lines.append("")
 
