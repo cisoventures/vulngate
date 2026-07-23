@@ -5,7 +5,7 @@ All free channels. The repo itself is the canonical landing page.
 | Channel | Status | Notes |
 |---|---|---|
 | **GitHub repo** | ✅ live | https://github.com/cisoventures/vulngate (public, MIT) |
-| **GitHub Action** | ✅ published in-repo | `uses: cisoventures/vulngate@v1`. Marketplace listing is a one-time click in the repo UI (Releases → publish this Action to Marketplace). |
+| **GitHub Action** | ✅ on Marketplace | https://github.com/marketplace/actions/vulngate · `uses: cisoventures/vulngate@v1`. |
 | **PyPI** | ✅ live | https://pypi.org/project/vulngate/ (v1.1.0). `pip install "vulngate[scanners]"` / `[mcp]` works. Re-publish with `python -m build && twine upload dist/*`. |
 | **MCP registries** | ⬜ pending | Now unblocked (PyPI live). Submit `vulngate-mcp` to the modelcontextprotocol registry + awesome-mcp-servers; install command `pip install vulngate[mcp]` / `uvx --from vulngate[mcp] vulngate-mcp` resolves. |
 | **awesome-lists** | ⬜ pending | PRs to awesome-security, awesome-devsecops, awesome-static-analysis, awesome-actions, awesome-mcp-servers. |
