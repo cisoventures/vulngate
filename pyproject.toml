@@ -25,10 +25,13 @@ dependencies = []
 # `pip install vulngate[scanners]` pulls a working Python scanner stack in one shot.
 # (gitleaks is a Go binary installed separately; npm audit uses the local npm.)
 scanners = ["semgrep>=1.60", "pip-audit>=2.7"]
+# `pip install vulngate[mcp]` adds the local stdio MCP server (Phase 3).
+mcp = ["mcp>=1.2"]
 dev = ["pytest>=8", "jsonschema>=4"]
 
 [project.scripts]
 vulngate = "vulngate.cli:main"
+vulngate-mcp = "vulngate.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/cisoventures/vulngate"

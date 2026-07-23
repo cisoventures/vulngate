@@ -117,13 +117,29 @@ tab, and fails the check above the threshold. See [`action/`](action/) for all
 inputs. The optional LLM triage runs on **your** key — omit it and the free
 deterministic gate is fully useful.
 
+## Use it with your agent (the vibe-coder loop)
+
+Install the local MCP server (no hosting, no key) and your agent — Claude Code,
+Cursor, Codex, Windsurf — can scan, explain in plain English, and draft fixes on
+your own subscription:
+
+```bash
+pip install "vulngate[mcp,scanners]"
+claude mcp add vulngate -- vulngate-mcp      # Claude Code; other agents in mcp-server/
+```
+
+Then: *"scan my repo"* → *"what's the worst one?"* (plain-English explanation) →
+*"fix it"* (the agent drafts a patch, you approve). The server is read-only except
+for writing `findings.json`; it never writes code and makes no LLM calls itself.
+See [`mcp-server/`](mcp-server/) for per-agent config.
+
 ## Roadmap
 
 | Phase | What | Status |
 |---|---|---|
 | **1** | CLI core — orchestrate + normalize + SARIF/JSON + exit codes | ✅ shipped |
 | **2** | GitHub Action — PR comment, SARIF upload, threshold gate, optional BYO-key LLM triage | ✅ shipped |
-| **3** | MCP server — `scan_repo` / `explain_finding` / `suggest_patch` for your agent (the flagship vibe-coder loop) | ⬜ planned |
+| **3** | MCP server — `scan_repo` / `explain_finding` / `suggest_patch` for your agent (the flagship vibe-coder loop) | ✅ shipped |
 | **4** | Instruction adapters — `SKILL.md`, `.cursor/rules`, `AGENTS.md` + distribution | ⬜ planned |
 
 Each phase is independently useful — stopping after any one leaves a complete tool.
