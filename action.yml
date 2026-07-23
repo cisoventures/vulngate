@@ -23,6 +23,9 @@ inputs:
   diff-only:
     description: "Limit findings to files changed in this PR (focus the comment/gate; avoids failing on pre-existing debt)"
     default: "false"
+  ignore-dev-deps:
+    description: "Don't fail the gate on build-only (dev) dependency flaws — they're still reported. Recommended for app teams where the build toolchain isn't shipped."
+    default: "false"
   install-gitleaks:
     description: "Install gitleaks for secret scanning"
     default: "true"
@@ -80,13 +83,16 @@ runs:
         VG_PATHS: ${{ inputs.paths }}
         VG_FAIL_ON: ${{ inputs.fail-on }}
         VG_CONFIG: ${{ inputs.config }}
+        VG_IGNORE_DEV_DEPS: ${{ inputs.ignore-dev-deps }}
       run: |
         set +e
         # SARIF is generated LATER, from the final findings.json (post diff-filter
         # and triage), so the Security tab matches the PR comment and the gate.
         args=(scan "$VG_PATHS" --fail-on "$VG_FAIL_ON" --json findings.json --no-color)
         [ -n "$VG_CONFIG" ] && args+=(--config "$VG_CONFIG")
+        [ "$VG_IGNORE_DEV_DEPS" = "true" ] && args+=(--ignore-dev-deps)
         vulngate "${args[@]}"
+        # The gate step re-reads this policy from findings.json, so it stays consistent.
         echo "scan_exit=$?" >> "$GITHUB_OUTPUT"
 
     - name: Diff filter (PR-changed files only)

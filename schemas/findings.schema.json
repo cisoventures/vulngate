@@ -10,7 +10,7 @@
     "schema_version": {"type": "string", "const": "1.0.0"},
     "scan": {
       "type": "object",
-      "required": ["tool_version", "target", "started_at", "duration_ms", "fail_on", "status", "exit_code", "receipt", "scanners"],
+      "required": ["tool_version", "target", "started_at", "duration_ms", "fail_on", "status", "exit_code", "fail_on_dev_deps", "receipt", "scanners"],
       "additionalProperties": false,
       "properties": {
         "tool_version": {"type": "string"},
@@ -20,6 +20,7 @@
         "fail_on": {"enum": ["critical", "high", "medium", "low"]},
         "status": {"enum": ["complete", "partial", "no_coverage", "error"]},
         "exit_code": {"enum": [0, 1, 2]},
+        "fail_on_dev_deps": {"type": "boolean", "description": "whether build-only (dev) dependency flaws count toward the gate"},
         "receipt": {
           "type": "object",
           "description": "provenance so a findings.json is self-describing and auditable",

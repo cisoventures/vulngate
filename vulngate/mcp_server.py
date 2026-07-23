@@ -33,14 +33,19 @@ def _findings_path(path: str) -> Path:
     return (root if root.is_dir() else root.parent) / FINDINGS_NAME
 
 
-def _scan_repo(path: str = ".", fail_on: str = "high") -> dict[str, Any]:
-    """Run the CLI and return the normalized findings envelope."""
+def _scan_repo(path: str = ".", fail_on: str = "high", block_on_build_only_deps: bool = False) -> dict[str, Any]:
+    """Run the CLI and return the normalized findings envelope.
+
+    Defaults to NOT failing on build-only (dev) dependency flaws — this is the
+    vibecoder loop, and a flaw in the build toolchain never ships to the live
+    app, so it's reported but shouldn't read as a blocking failure. Pass
+    block_on_build_only_deps=True for the strict, CI-style verdict."""
     out = _findings_path(path)
-    proc = subprocess.run(
-        [sys.executable, "-m", "vulngate.cli", "scan", path,
-         "--fail-on", fail_on, "--json", str(out), "--quiet", "--no-color"],
-        capture_output=True, text=True, timeout=900,
-    )
+    argv = [sys.executable, "-m", "vulngate.cli", "scan", path,
+            "--fail-on", fail_on, "--json", str(out), "--quiet", "--no-color"]
+    if not block_on_build_only_deps:
+        argv.append("--ignore-dev-deps")
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=900)
     if proc.returncode == 2:  # tool error (bad target/config/all-scanners-failed)
         return {"error": "vulngate scan failed", "detail": (proc.stderr or "").strip()[-500:]}
     try:
@@ -205,7 +210,8 @@ try:
     _mcp = FastMCP("vulngate")
 
     @_mcp.tool()
-    def scan_repo(path: str = ".", fail_on: str = "high") -> dict:
+    def scan_repo(path: str = ".", fail_on: str = "high",
+                  block_on_build_only_deps: bool = False) -> dict:
         """Run vulngate's deterministic security scanners (SAST via Semgrep, secrets
         via gitleaks, dependency audit via pip-audit / npm audit) over a local repo
         and return normalized findings. Writes findings.json to the scanned directory
@@ -216,8 +222,11 @@ try:
         Args:
             path: repo or directory to scan (default ".").
             fail_on: severity threshold recorded for the gate (critical|high|medium|low).
+            block_on_build_only_deps: default False — a known flaw in a build-only
+                (dev) dependency is reported but does NOT fail the gate, because it
+                never ships to the live app. Set True for a strict, CI-style verdict.
         """
-        return _scan_repo(path, fail_on)
+        return _scan_repo(path, fail_on, block_on_build_only_deps)
 
     @_mcp.tool()
     def explain_finding(finding_id: str, path: str = ".") -> dict:

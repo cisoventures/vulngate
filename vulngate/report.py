@@ -11,7 +11,7 @@ import sys
 from typing import Any
 
 from . import knowledge
-from .schema import SEVERITIES
+from .schema import SEVERITIES, at_or_above, gates_the_build
 
 # ── color handling ───────────────────────────────────────────────────────────
 _C = {
@@ -146,14 +146,27 @@ def terminal_report(report: dict[str, Any], color: bool = True) -> str:
     ) or "0 findings"
     lines.append(f"summary: {counts}   ({summary['total']} total)")
 
+    # Build-only dependency flaws that are being SHOWN but not blocking the gate
+    # (fail_on_dev_deps = false). Call it out so a PASS with visible highs makes sense.
+    fail_on_dev_deps = scan.get("fail_on_dev_deps", True)
+    if not fail_on_dev_deps:
+        non_blocking = sum(
+            1 for f in findings
+            if at_or_above(f["severity"], scan["fail_on"])
+            and (f.get("details") or {}).get("dependency_scope") == "development"
+        )
+        if non_blocking:
+            lines.append(_paint(
+                f"note: {non_blocking} build-only issue(s) above are shown but NOT blocking "
+                "— build-only tools don't ship to your live app.", "dim", on))
+
     ec = scan["exit_code"]
     if scan.get("status") == "no_coverage":
         verdict = _paint("NO COVERAGE", "medium", on) + " — no scanner ran; this is NOT a clean result"
     elif ec == 0:
-        verdict = _paint("PASS", "green", on) + f" — nothing at or above '{scan['fail_on']}'"
+        verdict = _paint("PASS", "green", on) + f" — nothing blocking at or above '{scan['fail_on']}'"
     elif ec == 1:
-        n = sum(summary[s] for s in SEVERITIES
-                if SEVERITIES.index(s) <= SEVERITIES.index(scan["fail_on"]))
+        n = sum(1 for f in findings if gates_the_build(f, scan["fail_on"], fail_on_dev_deps))
         verdict = _paint("FAIL", "high", on) + f" — {n} finding(s) at or above '{scan['fail_on']}'"
     else:
         verdict = _paint("ERROR", "high", on) + " — a scanner failed to run"

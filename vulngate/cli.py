@@ -20,8 +20,8 @@ from . import __version__
 from .config import ConfigError, load_config
 from .detect import detect
 from .report import terminal_report, to_sarif
-from .schema import (Diagnostic, Finding, ScannerRun, at_or_above, build_report,
-                     config_hash as compute_config_hash)
+from .schema import (Diagnostic, Finding, ScannerRun, build_report,
+                     config_hash as compute_config_hash, gates_the_build)
 from .scanners.base import disabled as disabled_run
 from .scanners import (gitleaks_scanner, npm_audit_scanner, pip_audit_scanner,
                        semgrep_scanner)
@@ -77,6 +77,7 @@ def _build_parser() -> argparse.ArgumentParser:
     gate.add_argument("findings", nargs="?", default="findings.json", help="path to a findings.json (default: findings.json)")
     gate.add_argument("--fail-on", choices=["critical", "high", "medium", "low"], help="severity threshold (default: the value recorded in the file)")
     gate.add_argument("--allow-no-coverage", action="store_true", help="pass instead of failing when no scanner ran (default: fail closed)")
+    gate.add_argument("--ignore-dev-deps", action="store_true", help="don't fail on build-only (dev) dependency flaws (default: use the policy recorded in the file)")
     gate.add_argument("--quiet", action="store_true", help="suppress the one-line verdict")
 
     scan = sub.add_parser("scan", help="scan a repository or path")
@@ -89,6 +90,7 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--no-deps", action="store_true", default=None, help="pass --no-deps to pip-audit (skip resolution; for fully-pinned requirement files)")
     scan.add_argument("--dep-severity", choices=["critical", "high", "medium", "low"], help="severity for dependency findings lacking a CVSS score (default: medium)")
     scan.add_argument("--allow-no-coverage", action="store_true", default=None, help="exit 0 instead of 2 when no scanner ran (default: fail closed)")
+    scan.add_argument("--ignore-dev-deps", action="store_true", default=None, help="don't fail the gate on build-only (dev) dependency flaws — they're still reported (recommended for vibecoder setups)")
     scan.add_argument("--no-color", action="store_true", help="disable colored output")
     scan.add_argument("--quiet", action="store_true", help="suppress the terminal summary")
 
@@ -114,6 +116,8 @@ def _run_scan(args) -> int:
     disabled = set(cfg["disable"])
     ignore = set(cfg["ignore"])
     allow_no_coverage = args.allow_no_coverage if args.allow_no_coverage is not None else cfg["allow_no_coverage"]
+    # Resolve the build-only-dep gate policy (CLI flag wins over config).
+    fail_on_dev_deps = (not args.ignore_dev_deps) if args.ignore_dev_deps is not None else cfg["fail_on_dev_deps"]
     opts = {
         "no_deps": args.no_deps if args.no_deps is not None else cfg["no_deps"],
         "dependency_severity": args.dep_severity or cfg["dependency_severity"],
@@ -159,7 +163,7 @@ def _run_scan(args) -> int:
                     "--allow-no-coverage to accept it.",
         ))
 
-    threshold_hit = any(at_or_above(f.severity, fail_on) for f in findings)
+    threshold_hit = any(gates_the_build(f, fail_on, fail_on_dev_deps) for f in findings)
     exit_code = 2 if tool_error else (1 if threshold_hit else 0)
 
     # Scan receipt — provenance so a findings.json is self-describing and
@@ -172,6 +176,7 @@ def _run_scan(args) -> int:
         "no_deps": opts["no_deps"],
         "dependency_severity": opts["dependency_severity"],
         "allow_no_coverage": allow_no_coverage,
+        "fail_on_dev_deps": fail_on_dev_deps,
     }
     completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -180,6 +185,7 @@ def _run_scan(args) -> int:
         completed_at=completed_at,
         duration_ms=int((time.monotonic() - t0) * 1000), fail_on=fail_on,
         scan_status=scan_status, exit_code=exit_code,
+        fail_on_dev_deps=fail_on_dev_deps,
         commit=_git_commit(root), config_hash=compute_config_hash(resolved_cfg),
         scanners=runs, findings=findings, diagnostics=diags,
     )
@@ -215,11 +221,14 @@ def _run_gate(args) -> int:
                   "Pass --allow-no-coverage to override.", file=sys.stderr)
         return 2
     fail_on = args.fail_on or data.get("scan", {}).get("fail_on", "high")
+    # Honor the build-only-dep policy recorded by the scan, unless overridden.
+    fail_on_dev_deps = False if args.ignore_dev_deps else data.get("scan", {}).get("fail_on_dev_deps", True)
     findings = data.get("findings", [])
-    hit = any(at_or_above(f.get("severity", "low"), fail_on) for f in findings)
+    gating = [f for f in findings if gates_the_build(f, fail_on, fail_on_dev_deps)]
+    hit = bool(gating)
     if not args.quiet:
         verdict = "FAIL" if hit else "PASS"
-        print(f"vulngate gate: {verdict} — {len(findings)} finding(s), threshold '{fail_on}'")
+        print(f"vulngate gate: {verdict} — {len(gating)} blocking of {len(findings)} finding(s), threshold '{fail_on}'")
     return 1 if hit else 0
 
 

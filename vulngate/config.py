@@ -11,6 +11,8 @@ Looked up (first match wins): --config PATH, then vulngate.toml, then
     ignore  = ["vg_ab12...", "python.lang.security.audit.some-rule"]  # finding id or rule
     no_deps = false             # pass --no-deps to pip-audit (for fully-pinned req files)
     dependency_severity = "medium"  # severity for dep findings that lack a CVSS score
+    fail_on_dev_deps = true     # do build-only (dev) dependency flaws block the gate?
+                                # set false so they're reported but don't fail the check
 """
 
 from __future__ import annotations
@@ -26,6 +28,10 @@ DEFAULTS = {
     "no_deps": False,
     "dependency_severity": "medium",
     "allow_no_coverage": False,   # a gate fails closed when no scanner ran
+    # Do build-only (dev) dependency flaws block the gate? Default yes (strict, for
+    # CI). Set false for a vibecoder setup so a flaw in the build toolchain — which
+    # never ships to the live app — is reported but doesn't fail the check.
+    "fail_on_dev_deps": True,
 }
 _CANDIDATES = ("vulngate.toml", ".vulngate.toml")
 
@@ -62,4 +68,7 @@ def load_config(root: Path, explicit_path: str | None) -> dict:
         raise ConfigError(f"invalid fail_on: {cfg['fail_on']!r}")
     if cfg["dependency_severity"] not in ("critical", "high", "medium", "low"):
         raise ConfigError(f"invalid dependency_severity: {cfg['dependency_severity']!r}")
+    for flag in ("fail_on_dev_deps", "allow_no_coverage", "no_deps"):
+        if not isinstance(cfg[flag], bool):
+            raise ConfigError(f"{flag} must be true or false, not {cfg[flag]!r}")
     return cfg

@@ -44,9 +44,24 @@ def render_markdown(data: dict) -> str:
     # possibly-stale scan.exit_code — so comment, gate, and JSON always agree.
     _RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
     fail_on = scan.get("fail_on", "high")
+    fail_on_dev_deps = scan.get("fail_on_dev_deps", True)
+
+    def _gates(f):
+        if _RANK.get(f["severity"], 0) < _RANK.get(fail_on, 0):
+            return False
+        if not fail_on_dev_deps and (f.get("details") or {}).get("dependency_scope") == "development":
+            return False
+        return True
+
+    non_blocking = sum(
+        1 for f in findings
+        if _RANK.get(f["severity"], 0) >= _RANK.get(fail_on, 0)
+        and not fail_on_dev_deps
+        and (f.get("details") or {}).get("dependency_scope") == "development"
+    )
     if scan.get("status") == "error":
         ec, verdict = 2, "⚠️ **Tool error**"
-    elif any(_RANK.get(f["severity"], 0) >= _RANK.get(fail_on, 0) for f in findings):
+    elif any(_gates(f) for f in findings):
         ec, verdict = 1, "❌ **Failed**"
     elif scan.get("status") == "no_coverage":
         ec, verdict = 0, "⚠️ **No coverage** — no scanner ran"
@@ -55,6 +70,8 @@ def render_markdown(data: dict) -> str:
 
     out = [MARKER, "## vulngate security report", ""]
     out.append(f"{verdict} — threshold `{scan['fail_on']}`, {summary['total']} finding(s)")
+    if non_blocking:
+        out.append(f"\n> ℹ️ {non_blocking} build-only issue(s) shown below are **not blocking** — build-only tools don't ship to your live app.")
     out.append("")
     counts = " · ".join(f"{EMOJI[s]} {summary[s]} {s}" for s in SEVERITIES if summary[s]) or "none"
     out.append(f"**Severity:** {counts}")

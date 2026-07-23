@@ -101,7 +101,17 @@ fail_on = "high"                 # critical | high | medium | low
 exclude = ["tests/*", "*.min.js"]
 disable = ["gitleaks"]           # scanner names to skip
 ignore  = ["python.lang.security.audit.some-rule", "vg_ab12cd..."]  # rule or finding id
+fail_on_dev_deps = true          # do build-only (dev) dependency flaws block the gate?
 ```
+
+**Build-only vs live-app dependencies.** A vulnerable *build-only* dependency
+(your dev toolchain — bundlers, test runners, CLIs) never ships to the running
+app, so it isn't the same risk as a flaw in a package your app actually runs.
+By default vulngate is strict (build-only flaws still block). For an app-team or
+vibecoder setup, set `fail_on_dev_deps = false` (or pass `--ignore-dev-deps`, or
+the Action's `ignore-dev-deps: true`): build-only flaws are **still reported**,
+just not treated as blocking. The local MCP server — the vibecoder agent loop —
+uses this lenient behavior by default.
 
 ## Use it in CI (the enforcement point)
 

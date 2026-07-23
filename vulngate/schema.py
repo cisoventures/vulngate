@@ -31,6 +31,28 @@ def at_or_above(severity: str, threshold: str) -> bool:
     return SEVERITY_RANK.get(severity, 0) >= SEVERITY_RANK.get(threshold, 0)
 
 
+def _finding_field(finding: Any, key: str):
+    """Read a field from either a Finding dataclass or a plain findings.json dict."""
+    return finding.get(key) if isinstance(finding, dict) else getattr(finding, key, None)
+
+
+def gates_the_build(finding: Any, fail_on: str, fail_on_dev_deps: bool = True) -> bool:
+    """Does this finding count toward the pass/fail decision?
+
+    A finding gates when it's at or above the threshold — UNLESS it's a
+    build-only (development-scope) dependency and the policy says those don't
+    block. Build-only tools never ship to the live app, so this lets a vibecoder
+    stay unblocked over a non-exposed flaw while it's still reported. Works on
+    both a Finding dataclass (during a scan) and a dict (re-gating a JSON)."""
+    if not at_or_above(_finding_field(finding, "severity") or "low", fail_on):
+        return False
+    if not fail_on_dev_deps:
+        details = _finding_field(finding, "details") or {}
+        if details.get("dependency_scope") == "development":
+            return False
+    return True
+
+
 def fingerprint(scanner: str, rule: str, rel_path: str, native_identity: str) -> tuple[str, str]:
     """Compute a stable (id, dedupe_hash) pair for a finding.
 
@@ -130,6 +152,7 @@ def build_report(
     fail_on: str,
     scan_status: str,
     exit_code: int,
+    fail_on_dev_deps: bool,
     commit: Optional[str],
     config_hash: str,
     scanners: list[ScannerRun],
@@ -153,6 +176,9 @@ def build_report(
             "fail_on": fail_on,
             "status": scan_status,        # complete | partial | no_coverage | error
             "exit_code": exit_code,
+            # Policy: do build-only (dev) dependency flaws block the gate? Persisted
+            # so `vulngate gate` and the report render the same verdict as the scan.
+            "fail_on_dev_deps": fail_on_dev_deps,
             "receipt": {
                 "commit": commit,
                 "config_hash": config_hash,

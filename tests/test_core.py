@@ -114,6 +114,51 @@ def test_short_rule_display():
     assert _short_rule("PYSEC-2018-28") == "PYSEC-2018-28"
 
 
+def test_gates_the_build_build_only_dep_policy():
+    from vulngate.schema import gates_the_build
+    hi_dev = {"severity": "high", "details": {"dependency_scope": "development"}}
+    hi_run = {"severity": "high", "details": {"dependency_scope": "runtime"}}
+    lo = {"severity": "low", "details": {}}
+    # strict (default): a build-only high still blocks
+    assert gates_the_build(hi_dev, "high", fail_on_dev_deps=True)
+    # lenient: build-only high no longer blocks, but a live-app high still does
+    assert not gates_the_build(hi_dev, "high", fail_on_dev_deps=False)
+    assert gates_the_build(hi_run, "high", fail_on_dev_deps=False)
+    # below threshold never gates
+    assert not gates_the_build(lo, "high", fail_on_dev_deps=True)
+
+
+def test_gate_ignore_dev_deps_flips_verdict(tmp_path):
+    # A findings.json whose only at-threshold finding is a build-only dep.
+    data = {"scan": {"status": "complete", "fail_on": "high", "exit_code": 1,
+                     "fail_on_dev_deps": True},
+            "findings": [{"severity": "high", "scanner": "npm-audit", "rule": "GHSA-x",
+                          "details": {"package": "wrangler", "dependency_scope": "development"}}]}
+    p = tmp_path / "f.json"; p.write_text(json.dumps(data))
+    assert main(["gate", str(p), "--quiet"]) == 1                       # strict: blocks
+    assert main(["gate", str(p), "--quiet", "--ignore-dev-deps"]) == 0  # lenient: passes
+    # policy recorded in the file is honored without the flag
+    data["scan"]["fail_on_dev_deps"] = False
+    p.write_text(json.dumps(data))
+    assert main(["gate", str(p), "--quiet"]) == 0
+    # a RUNTIME dep at threshold still blocks even when dev deps are ignored
+    data["findings"][0]["details"]["dependency_scope"] = "runtime"
+    p.write_text(json.dumps(data))
+    assert main(["gate", str(p), "--quiet"]) == 1
+
+
+def test_config_fail_on_dev_deps(tmp_path):
+    assert load_config(tmp_path, None)["fail_on_dev_deps"] is True     # strict default
+    (tmp_path / "vulngate.toml").write_text("fail_on_dev_deps = false\n")
+    assert load_config(tmp_path, None)["fail_on_dev_deps"] is False
+    (tmp_path / "vulngate.toml").write_text('fail_on_dev_deps = "nope"\n')
+    try:
+        load_config(tmp_path, None)
+        assert False, "expected ConfigError"
+    except ConfigError:
+        pass
+
+
 def test_gate_fails_closed_on_no_coverage(tmp_path):
     data = {"scan": {"status": "no_coverage", "fail_on": "high", "exit_code": 0}, "findings": []}
     p = tmp_path / "f.json"
@@ -225,7 +270,7 @@ def _report(**over):
     base = dict(
         tool_version="0.1.0", target=".", started_at="2026-07-23T00:00:00Z",
         completed_at="2026-07-23T00:00:05Z", duration_ms=5, fail_on="high",
-        scan_status="complete", exit_code=1, commit="abc123",
+        scan_status="complete", exit_code=1, fail_on_dev_deps=True, commit="abc123",
         config_hash="sha256:" + "0" * 64,
         scanners=[ScannerRun("semgrep", "1.0", "completed", 2, applicable=True, available=True)],
         diagnostics=[], findings=findings,
