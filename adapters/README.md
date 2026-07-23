@@ -1,13 +1,22 @@
-# adapters/ — Phase 4 (planned)
+# adapters/ — Phase 4 ✅ (per-agent instruction files)
 
-Thin per-agent instruction files (≈20 lines each, no logic) that point agents at
-the CLI/MCP. Nothing here yet.
+Thin instruction files (≈20 lines, no logic) that tell each agent to run vulngate
+before declaring work deployment-ready — scan, read `findings.json`, and use the
+MCP tools if the server is connected. Copy the one(s) for your agent into your repo.
 
-Planned:
-- `SKILL.md` (Claude), `.cursor/rules` (Cursor), `AGENTS.md` (Codex and the
-  emerging cross-agent convention — one file may cover several agents).
-- Each tells the agent: run the scan before declaring work deployment-ready,
-  read `findings.json`, and use the MCP tools if available.
+| Agent | Template | Install location |
+|---|---|---|
+| Claude Code | [`SKILL.md`](SKILL.md) | `.claude/skills/vulngate-security-gate/SKILL.md` |
+| Codex + cross-agent | [`AGENTS.md`](AGENTS.md) | repo root as `AGENTS.md` (append if you already have one) |
+| Cursor | [`cursor.mdc`](cursor.mdc) | `.cursor/rules/vulngate.mdc` |
+| Windsurf | [`AGENTS.md`](AGENTS.md) | Windsurf reads `AGENTS.md` / repo rules — use the AGENTS.md content |
 
-Distribution (all free): MCP registries, awesome-lists, Show HN, r/programming,
-and this repo as the canonical landing page.
+They're intentionally identical in intent, differing only in each agent's file
+format. All of them defer to the [CLI](../README.md) and the
+[MCP server](../mcp-server/) — no scan logic is duplicated.
+
+This repo dogfoods its own gate: see the root [`AGENTS.md`](../AGENTS.md).
+
+> The enforcement point is still **CI** (the [Action](../action/)). Adapters are
+> for in-IDE convenience — an agent can ignore an instruction file, but it can't
+> ignore a failing merge check.

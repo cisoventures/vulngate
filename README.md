@@ -140,7 +140,7 @@ See [`mcp-server/`](mcp-server/) for per-agent config.
 | **1** | CLI core — orchestrate + normalize + SARIF/JSON + exit codes | ✅ shipped |
 | **2** | GitHub Action — PR comment, SARIF upload, threshold gate, optional BYO-key LLM triage | ✅ shipped |
 | **3** | MCP server — `scan_repo` / `explain_finding` / `suggest_patch` for your agent (the flagship vibe-coder loop) | ✅ shipped |
-| **4** | Instruction adapters — `SKILL.md`, `.cursor/rules`, `AGENTS.md` + distribution | ⬜ planned |
+| **4** | Instruction adapters — `SKILL.md`, `.cursor/rules`, `AGENTS.md` + distribution | ✅ shipped |
 
 Each phase is independently useful — stopping after any one leaves a complete tool.
 

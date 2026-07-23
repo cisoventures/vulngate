@@ -1,0 +1,11 @@
+---
+description: Security gate — run vulngate before declaring code deployment-ready
+alwaysApply: true
+---
+
+Before you finish a task that changed code, run a vulngate security scan and resolve findings at or above `high`.
+
+- Run `vulngate scan .` — exit `1` = findings at/above threshold. Read `findings.json` (`severity`, `file`, `line`, `plain_summary`, `remediation_hint`).
+- If the vulngate MCP server is connected, prefer its tools: `scan_repo`, then `explain_finding` / `suggest_patch` per finding.
+- Explain each high/critical finding in plain English, propose a minimal fix, and show the diff before applying. Never commit a secret — rotate it and load it from an environment variable.
+- Not installed? `pip install "vulngate[scanners]"` (plus `brew install gitleaks`).
