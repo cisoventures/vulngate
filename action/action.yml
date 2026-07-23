@@ -1,0 +1,103 @@
+name: "vulngate"
+description: "Agent-neutral security checks before you ship — SAST, secrets, and dependency audit as a merge gate."
+branding:
+  icon: "shield"
+  color: "red"
+
+inputs:
+  paths:
+    description: "Path to scan"
+    default: "."
+  fail-on:
+    description: "Severity threshold that fails the check (critical|high|medium|low)"
+    default: "high"
+  config:
+    description: "Path to a vulngate config file (optional)"
+    default: ""
+  comment:
+    description: "Post/update a single PR comment with findings"
+    default: "true"
+  upload-sarif:
+    description: "Upload SARIF to the GitHub Security tab"
+    default: "true"
+  diff-only:
+    description: "Limit findings to files changed in this PR (focus the comment/gate; avoids failing on pre-existing debt)"
+    default: "false"
+  install-gitleaks:
+    description: "Install gitleaks for secret scanning"
+    default: "true"
+  anthropic-api-key:
+    description: "OPTIONAL — your own Anthropic API key for LLM triage (BYO-inference). Empty = skipped, free tier stays fully useful."
+    default: ""
+  anthropic-model:
+    description: "Model for LLM triage when a key is provided"
+    default: "claude-opus-4-8"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install vulngate + scanners
+      shell: bash
+      run: pip install "vulngate[scanners]"
+
+    - name: Install gitleaks
+      if: inputs.install-gitleaks == 'true'
+      shell: bash
+      run: |
+        set -e
+        tag=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | python -c "import sys,json;print(json.load(sys.stdin)['tag_name'])")
+        ver=${tag#v}
+        curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${ver}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+        gitleaks version
+
+    - name: Scan
+      id: scan
+      shell: bash
+      run: |
+        set +e
+        cfg=""
+        [ -n "${{ inputs.config }}" ] && cfg="--config ${{ inputs.config }}"
+        vulngate scan "${{ inputs.paths }}" --fail-on "${{ inputs.fail-on }}" $cfg \
+          --json findings.json --sarif vulngate.sarif --no-color
+        echo "scan_exit=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Diff filter (PR-changed files only)
+      if: inputs.diff-only == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python "${{ github.action_path }}/scripts/diff_filter.py" findings.json
+
+    - name: LLM triage (optional, BYO key)
+      if: inputs.anthropic-api-key != ''
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
+      run: |
+        pip install anthropic >/dev/null
+        python "${{ github.action_path }}/scripts/triage.py" findings.json
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: vulngate.sarif
+
+    - name: PR comment
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python "${{ github.action_path }}/scripts/pr_comment.py" findings.json
+
+    - name: Enforce threshold
+      shell: bash
+      run: |
+        # Re-evaluate AFTER diff-filter/triage so those affect the verdict.
+        vulngate gate findings.json --fail-on "${{ inputs.fail-on }}"

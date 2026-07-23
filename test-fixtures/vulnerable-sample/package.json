@@ -1,0 +1,10 @@
+{
+  "name": "vulnerable-sample",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Intentionally vulnerable dependencies for vulngate end-to-end tests.",
+  "dependencies": {
+    "lodash": "4.17.4",
+    "minimist": "1.2.0"
+  }
+}

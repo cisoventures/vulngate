@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: unit tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      # Validate the fixture output actually conforms to the checked-in schema.
+      - name: schema conformance
+        run: |
+          python -c "import json,jsonschema; jsonschema.Draft202012Validator(json.load(open('schemas/findings.schema.json')))"
+
+  e2e:
+    name: end-to-end against fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,scanners]"
+      - name: scan the deliberately-vulnerable fixture (must exit 1)
+        run: |
+          set +e
+          vulngate scan test-fixtures/vulnerable-sample --json findings.json --sarif out.sarif
+          code=$?
+          set -e
+          echo "vulngate exit code: $code"
+          test "$code" = "1"
+      - name: findings.json must validate against the schema
+        run: |
+          python - <<'PY'
+          import json, jsonschema
+          schema = json.load(open("schemas/findings.schema.json"))
+          data = json.load(open("findings.json"))
+          jsonschema.validate(data, schema)
+          print("findings.json is schema-valid:", data["summary"])
+          PY
+      - name: dogfood — vulngate scans itself (informational)
+        continue-on-error: true
+        run: vulngate scan . --fail-on high

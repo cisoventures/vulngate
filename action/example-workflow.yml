@@ -1,0 +1,20 @@
+# Copy this to .github/workflows/vulngate.yml in your repo.
+name: vulngate
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write     # upsert the single PR comment
+  security-events: write   # upload SARIF to the Security tab
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cisoventures/vulngate@v1
+        with:
+          fail-on: high
+          # diff-only: true                                  # only fail on files this PR touched
+          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # optional: your key → LLM triage + fix suggestions

@@ -1,0 +1,4 @@
+# Pinned to versions with known, published advisories (intentional).
+requests==2.19.1
+PyYAML==5.1
+Jinja2==2.10

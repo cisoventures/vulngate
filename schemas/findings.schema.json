@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cisoventures/vulngate/schemas/findings.schema.json",
+  "title": "vulngate findings",
+  "description": "Normalized output shape shared by the CLI, GitHub Action, and MCP server. findings never contain raw secret values or source snippets.",
+  "type": "object",
+  "required": ["schema_version", "scan", "summary", "findings", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "scan": {
+      "type": "object",
+      "required": ["tool_version", "target", "started_at", "duration_ms", "fail_on", "status", "exit_code", "scanners"],
+      "additionalProperties": false,
+      "properties": {
+        "tool_version": {"type": "string"},
+        "target": {"type": "string"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "fail_on": {"enum": ["critical", "high", "medium", "low"]},
+        "status": {"enum": ["complete", "partial", "error"]},
+        "exit_code": {"enum": [0, 1, 2]},
+        "scanners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "version", "status", "finding_count"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "version": {"type": ["string", "null"]},
+              "status": {"enum": ["completed", "skipped", "error"]},
+              "finding_count": {"type": "integer", "minimum": 0},
+              "message": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "critical", "high", "medium", "low"],
+      "additionalProperties": false,
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "critical": {"type": "integer", "minimum": 0},
+        "high": {"type": "integer", "minimum": 0},
+        "medium": {"type": "integer", "minimum": 0},
+        "low": {"type": "integer", "minimum": 0}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "scanner", "rule", "severity", "file", "line", "plain_summary", "description", "remediation_hint", "dedupe_hash", "details"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^vg_[0-9a-f]{24}$"},
+          "scanner": {"type": "string"},
+          "rule": {"type": "string"},
+          "severity": {"enum": ["critical", "high", "medium", "low"]},
+          "file": {"type": "string", "description": "repository-relative POSIX path"},
+          "line": {"type": ["integer", "null"], "minimum": 1},
+          "plain_summary": {"type": "string", "description": "jargon-free explanation for non-experts"},
+          "description": {"type": "string"},
+          "remediation_hint": {"type": "string"},
+          "dedupe_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "details": {"type": "object", "description": "normalized optional data; never raw secrets or code snippets"}
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["scanner", "level", "code", "message"],
+        "additionalProperties": false,
+        "properties": {
+          "scanner": {"type": "string"},
+          "level": {"enum": ["info", "warning", "error"]},
+          "code": {"type": "string"},
+          "message": {"type": "string"}
+        }
+      }
+    }
+  }
+}
