@@ -122,7 +122,9 @@ def terminal_report(report: dict[str, Any], color: bool = True) -> str:
     lines.append(f"summary: {counts}   ({summary['total']} total)")
 
     ec = scan["exit_code"]
-    if ec == 0:
+    if scan.get("status") == "no_coverage":
+        verdict = _paint("NO COVERAGE", "medium", on) + " — no scanner ran; this is NOT a clean result"
+    elif ec == 0:
         verdict = _paint("PASS", "green", on) + f" — nothing at or above '{scan['fail_on']}'"
     elif ec == 1:
         n = sum(summary[s] for s in SEVERITIES

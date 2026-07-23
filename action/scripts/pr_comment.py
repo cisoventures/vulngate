@@ -29,9 +29,18 @@ API = "https://api.github.com"
 def render_markdown(data: dict) -> str:
     scan, summary = data["scan"], data["summary"]
     findings = data["findings"]
-    ec = scan["exit_code"]
-    verdict = ("✅ **Passed**" if ec == 0 else
-               "❌ **Failed**" if ec == 1 else "⚠️ **Tool error**")
+    # Derive the verdict from the findings actually shown (source of truth), not a
+    # possibly-stale scan.exit_code — so comment, gate, and JSON always agree.
+    _RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    fail_on = scan.get("fail_on", "high")
+    if scan.get("status") == "error":
+        ec, verdict = 2, "⚠️ **Tool error**"
+    elif any(_RANK.get(f["severity"], 0) >= _RANK.get(fail_on, 0) for f in findings):
+        ec, verdict = 1, "❌ **Failed**"
+    elif scan.get("status") == "no_coverage":
+        ec, verdict = 0, "⚠️ **No coverage** — no scanner ran"
+    else:
+        ec, verdict = 0, "✅ **Passed**"
 
     out = [MARKER, "## vulngate security report", ""]
     out.append(f"{verdict} — threshold `{scan['fail_on']}`, {summary['total']} finding(s)")

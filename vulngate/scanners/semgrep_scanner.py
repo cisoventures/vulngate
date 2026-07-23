@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from ..knowledge import plain_summary
-from ..schema import Finding, fingerprint
+from ..schema import Diagnostic, Finding, fingerprint
 from .base import (ScanOutput, completed, errored, normalize_cwes, rel_posix,
                    resolve_cmd, run_cmd, skipped)
 
@@ -80,4 +80,17 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
                 "rule_url": rule_url,
             },
         ))
-    return completed(NAME, version, findings)
+    # semgrep can exit 1 with results=[] but errors[] populated (e.g. it couldn't
+    # write its state dir, or files failed to parse). Do NOT report that as a clean
+    # "completed 0" — that's the silent-coverage-failure trap.
+    errors = data.get("errors") or []
+    if errors and not findings:
+        msg = "; ".join(str((e or {}).get("message", "error"))[:120] for e in errors[:3])
+        return errored(NAME, version, f"semgrep produced no results but reported errors: {msg}")
+    out = completed(NAME, version, findings)
+    if errors:
+        out.diagnostics.append(Diagnostic(
+            scanner=NAME, level="warning", code="scanner_partial_errors",
+            message=f"semgrep reported {len(errors)} error(s); some files may not have been scanned",
+        ))
+    return out

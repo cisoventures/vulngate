@@ -76,7 +76,14 @@ def main() -> int:
     for f in kept:
         summary[f["severity"]] = summary.get(f["severity"], 0) + 1
     data["summary"] = {"total": len(kept), **summary}
-    data.setdefault("scan", {})["diff_scoped"] = True
+    scan = data.setdefault("scan", {})
+    scan["diff_scoped"] = True
+    # Keep the recorded exit code consistent with the filtered set — the PR comment
+    # and the gate must not disagree.
+    _RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    fail_on = scan.get("fail_on", "high")
+    hit = any(_RANK.get(f["severity"], 0) >= _RANK.get(fail_on, 0) for f in kept)
+    scan["exit_code"] = 2 if scan.get("status") == "error" else (1 if hit else 0)
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
     print(f"diff_filter: {len(before)} → {len(kept)} findings on {len(changed)} changed file(s)")
     return 0

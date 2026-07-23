@@ -50,22 +50,30 @@ runs:
     - name: Install gitleaks
       if: inputs.install-gitleaks == 'true'
       shell: bash
+      env:
+        GITLEAKS_VERSION: "8.30.1"   # pinned; verified against the release's checksums
       run: |
-        set -e
-        tag=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | python -c "import sys,json;print(json.load(sys.stdin)['tag_name'])")
-        ver=${tag#v}
-        curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${ver}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+        set -euo pipefail
+        file="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+        curl -sSfL "$base/$file" -o "$file"
+        curl -sSfL "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o gl_checksums.txt
+        grep " ${file}\$" gl_checksums.txt | sha256sum -c -
+        tar -xzf "$file" -C /usr/local/bin gitleaks
         gitleaks version
 
     - name: Scan
       id: scan
       shell: bash
+      env:                          # inputs via env, never interpolated into the shell
+        VG_PATHS: ${{ inputs.paths }}
+        VG_FAIL_ON: ${{ inputs.fail-on }}
+        VG_CONFIG: ${{ inputs.config }}
       run: |
         set +e
-        cfg=""
-        [ -n "${{ inputs.config }}" ] && cfg="--config ${{ inputs.config }}"
-        vulngate scan "${{ inputs.paths }}" --fail-on "${{ inputs.fail-on }}" $cfg \
-          --json findings.json --sarif vulngate.sarif --no-color
+        args=(scan "$VG_PATHS" --fail-on "$VG_FAIL_ON" --json findings.json --sarif vulngate.sarif --no-color)
+        [ -n "$VG_CONFIG" ] && args+=(--config "$VG_CONFIG")
+        vulngate "${args[@]}"
         echo "scan_exit=$?" >> "$GITHUB_OUTPUT"
 
     - name: Diff filter (PR-changed files only)
@@ -100,6 +108,8 @@ runs:
 
     - name: Enforce threshold
       shell: bash
+      env:
+        VG_FAIL_ON: ${{ inputs.fail-on }}
       run: |
         # Re-evaluate AFTER diff-filter/triage so those affect the verdict.
-        vulngate gate findings.json --fail-on "${{ inputs.fail-on }}"
+        vulngate gate findings.json --fail-on "$VG_FAIL_ON"

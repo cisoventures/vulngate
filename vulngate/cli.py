@@ -109,7 +109,13 @@ def _run_scan(args) -> int:
     if completed == 0 and errored > 0:
         scan_status, tool_error = "error", True
     elif completed == 0:
-        scan_status, tool_error = "complete", False   # nothing applicable — not an error
+        # Nothing actually ran — never report this as a clean "complete" pass.
+        scan_status, tool_error = "no_coverage", False
+        diags.append(Diagnostic(
+            scanner="vulngate", level="warning", code="no_coverage",
+            message="No scanner produced results — coverage is zero. Install scanners "
+                    "(pip install 'vulngate[scanners]'; brew install gitleaks).",
+        ))
     elif errored or any(r.status == "skipped" for r in runs):
         scan_status, tool_error = "partial", False
     else:

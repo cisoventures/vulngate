@@ -67,9 +67,14 @@ def _find(data: dict, finding_id: str) -> dict | None:
 
 
 def _snippet(path: str, rel_file: str, line, radius: int) -> str:
-    """Live-read numbered code context. Never persisted."""
+    """Live-read numbered code context. Never persisted, and confined to the repo
+    root — a manipulated finding path (e.g. '../../etc/passwd') is refused rather
+    than handed to the host agent."""
     root = Path(path).resolve()
-    target = (root if root.is_dir() else root.parent) / rel_file
+    base = root if root.is_dir() else root.parent
+    target = (base / rel_file).resolve()
+    if not target.is_relative_to(base):   # path escapes the scanned tree
+        return ""
     try:
         lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:

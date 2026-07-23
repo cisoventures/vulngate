@@ -32,6 +32,15 @@ def test_snippet_is_live_and_numbered():
     assert "11:" in snip and "subprocess" in snip  # read live from the working tree
 
 
+def test_snippet_refuses_path_traversal(tmp_path):
+    (tmp_path / "safe.py").write_text("ok = 1\n")
+    (tmp_path.parent / "outside.txt").write_text("SECRET OUTSIDE THE REPO\n")
+    # a manipulated finding path that escapes the scanned root yields nothing
+    assert _snippet(str(tmp_path), "../outside.txt", 1, radius=3) == ""
+    # a legitimate in-repo path still works
+    assert "ok" in _snippet(str(tmp_path), "safe.py", 1, radius=3)
+
+
 def test_explain_and_suggest(tmp_path):
     (tmp_path / "a.py").write_text("import os\nresult = eval(user_input)\n")
     data = {"scan": {"target": "."}, "findings": [{

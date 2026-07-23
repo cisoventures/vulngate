@@ -18,7 +18,7 @@
         "started_at": {"type": "string", "format": "date-time"},
         "duration_ms": {"type": "integer", "minimum": 0},
         "fail_on": {"enum": ["critical", "high", "medium", "low"]},
-        "status": {"enum": ["complete", "partial", "error"]},
+        "status": {"enum": ["complete", "partial", "no_coverage", "error"]},
         "exit_code": {"enum": [0, 1, 2]},
         "scanners": {
           "type": "array",

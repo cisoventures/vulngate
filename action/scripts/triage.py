@@ -125,6 +125,11 @@ def main() -> int:
             for f in kept:
                 summary[f["severity"]] = summary.get(f["severity"], 0) + 1
             data["summary"] = {"total": len(kept), **summary}
+            _RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+            fail_on = data.get("scan", {}).get("fail_on", "high")
+            hit = any(_RANK.get(f["severity"], 0) >= _RANK.get(fail_on, 0) for f in kept)
+            sc = data.setdefault("scan", {})
+            sc["exit_code"] = 2 if sc.get("status") == "error" else (1 if hit else 0)
             dropped = len(fps)
 
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
