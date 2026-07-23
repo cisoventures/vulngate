@@ -6,8 +6,8 @@ All free channels. The repo itself is the canonical landing page.
 |---|---|---|
 | **GitHub repo** | ✅ live | https://github.com/cisoventures/vulngate (public, MIT) |
 | **GitHub Action** | ✅ published in-repo | `uses: cisoventures/vulngate@v1`. Marketplace listing is a one-time click in the repo UI (Releases → publish this Action to Marketplace). |
-| **PyPI** | ⬜ pending | `vulngate` (name confirmed free). Publish with `python -m build && twine upload dist/*`. Makes `pip install "vulngate[scanners]"` real. |
-| **MCP registries** | ⬜ pending | Submit the local stdio server (`vulngate-mcp`) to the modelcontextprotocol registry + awesome-mcp-servers once PyPI is live (install command needs to resolve). |
+| **PyPI** | ✅ live | https://pypi.org/project/vulngate/ (v1.1.0). `pip install "vulngate[scanners]"` / `[mcp]` works. Re-publish with `python -m build && twine upload dist/*`. |
+| **MCP registries** | ⬜ pending | Now unblocked (PyPI live). Submit `vulngate-mcp` to the modelcontextprotocol registry + awesome-mcp-servers; install command `pip install vulngate[mcp]` / `uvx --from vulngate[mcp] vulngate-mcp` resolves. |
 | **awesome-lists** | ⬜ pending | PRs to awesome-security, awesome-devsecops, awesome-static-analysis, awesome-actions, awesome-mcp-servers. |
 | **Show HN / r/programming** | ⬜ pending | One-liner: "vulngate — free, agent-neutral security gate for AI-written code. SAST + secrets + deps, one findings schema, BYO-inference. We scan the code, not the agents." |
 
