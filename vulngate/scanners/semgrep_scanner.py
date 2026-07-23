@@ -14,6 +14,26 @@ from .base import (ScanOutput, completed, errored, normalize_cwes,
 
 NAME = "semgrep"
 _SEV = {"ERROR": "high", "WARNING": "medium", "INFO": "low"}
+# Semgrep OSS (no platform login — which is exactly how vulngate runs it) stamps
+# EVERY finding's extra.fingerprint with this constant placeholder. Treating it
+# as a real per-match fingerprint would collapse every match of a rule in a file
+# into one id, silently dropping distinct findings on other lines.
+_PLACEHOLDER_FP = "requires login"
+
+
+def _native_identity(rule: str, rel: str, start: dict, extra: dict) -> str:
+    """Stable identity for a semgrep match, used for the dedupe id.
+
+    Prefer semgrep's own per-match fingerprint (stable AND line-independent) when
+    it's real. When it's absent or the OSS "requires login" placeholder, fall back
+    to a LOCATION-keyed identity so two distinct matches of the same rule in the
+    same file stay distinct instead of merging into one finding.
+    """
+    raw_fp = str((extra or {}).get("fingerprint") or "").strip()
+    if raw_fp and raw_fp.lower() != _PLACEHOLDER_FP:
+        return raw_fp
+    start = start or {}
+    return f"{rule}:{rel}:{start.get('line')}:{start.get('col')}"
 
 
 def _has_results(data: object) -> bool:
@@ -68,6 +88,7 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
         return errored(NAME, version, f"semgrep did not return a valid report (exit {proc.returncode}): {tail}")
 
     findings: list[Finding] = []
+    seen_ids: set[str] = set()
     for r in data.get("results", []):
         rule = r.get("check_id", "semgrep.unknown")
         extra = r.get("extra", {}) or {}
@@ -75,8 +96,14 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
         severity = _SEV.get(str(extra.get("severity", "")).upper(), "medium")
         rel = rel_posix(r.get("path", ""), root)
         cwes = normalize_cwes(meta.get("cwe"))
-        native = extra.get("fingerprint") or f"{rule}:{rel}"
+        start = r.get("start", {}) or {}
+        native = _native_identity(rule, rel, start, extra)
         fid, dedupe = fingerprint(NAME, rule, rel, native)
+        if fid in seen_ids:
+            # semgrep can emit the same match multiple times (e.g. several taint
+            # paths to one sink). Collapse identical ids so finding_count is honest.
+            continue
+        seen_ids.add(fid)
         desc = extra.get("message") or meta.get("message") or rule
         rule_url = meta.get("shortlink") or meta.get("source")
         # semgrep's extra.fix is autofix replacement text, but emits the literal
@@ -90,11 +117,11 @@ def run(root: Path, det, opts: dict | None = None) -> ScanOutput:
             remediation = "Review and refactor the flagged pattern."
         findings.append(Finding(
             id=fid, scanner=NAME, rule=rule, severity=severity,
-            file=rel, line=(r.get("start", {}) or {}).get("line"),
+            file=rel, line=start.get("line"),
             plain_summary=plain_summary(scanner=NAME, rule=rule, cwes=cwes, description=desc),
             description=desc, remediation_hint=remediation, dedupe_hash=dedupe,
             details={
-                "column": (r.get("start", {}) or {}).get("col"),
+                "column": start.get("col"),
                 "end_line": (r.get("end", {}) or {}).get("line"),
                 "cwe": cwes,
                 "owasp": normalize_cwes(meta.get("owasp")) or meta.get("owasp"),

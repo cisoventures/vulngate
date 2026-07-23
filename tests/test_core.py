@@ -11,7 +11,7 @@ from vulngate.cli import derive_scan_status, main
 from vulngate.config import ConfigError, load_config
 from vulngate.scanners.base import (completed, disabled, errored,
                                     not_applicable, unavailable)
-from vulngate.scanners.semgrep_scanner import _has_results
+from vulngate.scanners.semgrep_scanner import _has_results, _native_identity
 from vulngate.detect import detect
 from vulngate.knowledge import plain_summary
 from vulngate.report import _short_rule, to_sarif
@@ -134,6 +134,23 @@ def test_sarif_subcommand_projects_findings_json(tmp_path, capsys):
     assert '"version": "2.1.0"' in capsys.readouterr().out
     # missing file -> exit 2 (matches gate/scan tool-error convention)
     assert main(["sarif", str(tmp_path / "nope.json")]) == 2
+
+
+def test_semgrep_placeholder_fingerprint_keeps_distinct_lines_distinct():
+    # Regression: Semgrep OSS stamps every finding with extra.fingerprint =
+    # "requires login". Two DISTINCT matches of the same rule in the same file
+    # (different lines) must NOT collapse into one dedupe id.
+    rule, rel = "javascript.audit.detect-non-literal-regexp", "src/index.js"
+    ph = {"fingerprint": "requires login"}
+    n865 = _native_identity(rule, rel, {"line": 865, "col": 13}, ph)
+    n911 = _native_identity(rule, rel, {"line": 911, "col": 13}, ph)
+    assert n865 != n911                                   # location keeps them apart
+    assert fingerprint(rule, rule, rel, n865)[0] != fingerprint(rule, rule, rel, n911)[0]  # different ids
+    # identical location still collapses (a genuine duplicate)
+    assert n865 == _native_identity(rule, rel, {"line": 865, "col": 13}, ph)
+    # a REAL fingerprint (logged-in semgrep) is used verbatim and stays line-independent
+    assert _native_identity(rule, rel, {"line": 865}, {"fingerprint": "abc123"}) == "abc123"
+    assert _native_identity(rule, rel, {"line": 999}, {"fingerprint": "abc123"}) == "abc123"
 
 
 def test_semgrep_crash_output_treated_as_invalid():
