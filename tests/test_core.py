@@ -54,6 +54,20 @@ def test_plain_summary_prefers_cwe_then_keyword_then_default():
     assert plain_summary(scanner="pip-audit", rule="r", cwes=[], description="") .startswith("A Python package")
 
 
+def test_plain_summary_expanded_pack_coverage():
+    # CWE path (new entries)
+    assert "SSRF" in plain_summary(scanner="semgrep", rule="r", cwes=["CWE-918"], description="d")
+    assert "open redirect" in plain_summary(scanner="semgrep", rule="r", cwes=["CWE-601"], description="d")
+    assert "prototype" in plain_summary(scanner="semgrep", rule="r", cwes=["CWE-1321"], description="d")
+    # keyword fallback path (no CWE) resolves to the mapped summary, not the raw description
+    assert "SSRF" in plain_summary(scanner="semgrep", rule="nextjs-ssrf", cwes=[], description="raw")
+    assert "NoSQL" in plain_summary(scanner="semgrep", rule="mongo-nosql-injection", cwes=[], description="raw")
+    # every keyword mapping points at a real CWE summary string (no dangling refs)
+    from vulngate.knowledge import CWE_SUMMARIES, KEYWORD_SUMMARIES
+    covered = set(CWE_SUMMARIES.values())
+    assert all(text in covered for _kw, text in KEYWORD_SUMMARIES)
+
+
 def test_detect_finds_manifests(tmp_path):
     det = detect(FIXTURE)
     assert "python" in det.languages

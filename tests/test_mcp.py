@@ -7,10 +7,27 @@ exercised separately; these cover the pure helpers.
 import json
 from pathlib import Path
 
+import vulngate.mcp_server as mcp
 from vulngate.mcp_server import (_explain_finding, _find, _findings_path,
-                                 _snippet, _suggest_patch)
+                                 _snippet, _suggest_patch, _verify_fix)
 
 FIX = Path(__file__).resolve().parents[1] / "test-fixtures" / "vulnerable-sample"
+
+
+def _envelope(findings, scanners):
+    """Minimal findings envelope for verify_fix tests."""
+    return {
+        "scan": {"target": ".", "status": "complete",
+                 "scanners": [{"name": n, "status": s} for n, s in scanners]},
+        "summary": {"total": len(findings)},
+        "findings": findings,
+    }
+
+
+def _f(fid="vg_x", scanner="semgrep"):
+    return {"id": fid, "scanner": scanner, "rule": "r", "severity": "high",
+            "file": "a.py", "line": 2, "plain_summary": "p", "description": "d",
+            "remediation_hint": "fix", "dedupe_hash": "sha256:z", "details": {}}
 
 
 def test_findings_path(tmp_path):
@@ -62,3 +79,51 @@ def test_explain_and_suggest(tmp_path):
     assert "error" in _explain_finding("does-not-exist", str(tmp_path))  # bad id
     clean = tmp_path / "clean"; clean.mkdir()
     assert "error" in _explain_finding("vg_test", str(clean))            # no findings.json
+
+
+def _prep(tmp_path, before_findings, scanners):
+    """Write the 'before' findings.json to a temp repo root."""
+    (tmp_path / "findings.json").write_text(json.dumps(_envelope(before_findings, scanners)))
+
+
+def test_verify_fix_confirmed_when_gone_and_scanner_completed(tmp_path, monkeypatch):
+    _prep(tmp_path, [_f()], [("semgrep", "completed")])
+    # re-scan: finding gone, owning scanner completed -> fixed
+    monkeypatch.setattr(mcp, "_scan_repo", lambda p, *a, **k: _envelope([], [("semgrep", "completed")]))
+    r = _verify_fix("vg_x", str(tmp_path))
+    assert r["verdict"] == "fixed" and r["resolved"] is True
+    assert r["scanner"] == "semgrep"
+
+
+def test_verify_fix_still_present(tmp_path, monkeypatch):
+    _prep(tmp_path, [_f()], [("semgrep", "completed")])
+    monkeypatch.setattr(mcp, "_scan_repo", lambda p, *a, **k: _envelope([_f()], [("semgrep", "completed")]))
+    r = _verify_fix("vg_x", str(tmp_path))
+    assert r["verdict"] == "still_present" and r["resolved"] is False
+
+
+def test_verify_fix_inconclusive_when_scanner_did_not_run(tmp_path, monkeypatch):
+    # The finding vanishes ONLY because the scanner isn't installed this time —
+    # that must NOT read as a fix (the core safety property).
+    _prep(tmp_path, [_f()], [("semgrep", "completed")])
+    monkeypatch.setattr(mcp, "_scan_repo", lambda p, *a, **k: _envelope([], [("semgrep", "unavailable")]))
+    r = _verify_fix("vg_x", str(tmp_path))
+    assert r["verdict"] == "inconclusive" and r["resolved"] is False
+
+
+def test_verify_fix_inconclusive_when_rescan_fails(tmp_path, monkeypatch):
+    _prep(tmp_path, [_f()], [("semgrep", "completed")])
+    monkeypatch.setattr(mcp, "_scan_repo", lambda p, *a, **k: {"error": "vulngate scan failed", "detail": "boom"})
+    r = _verify_fix("vg_x", str(tmp_path))
+    assert r["verdict"] == "inconclusive" and "boom" in r["detail"]
+
+
+def test_verify_fix_unknown_finding(tmp_path, monkeypatch):
+    _prep(tmp_path, [_f(fid="vg_other")], [("semgrep", "completed")])
+    monkeypatch.setattr(mcp, "_scan_repo", lambda p, *a, **k: _envelope([_f(fid="vg_other")], [("semgrep", "completed")]))
+    r = _verify_fix("vg_missing", str(tmp_path))
+    assert r["verdict"] == "unknown_finding"
+
+
+def test_verify_fix_needs_baseline(tmp_path):
+    assert "error" in _verify_fix("vg_x", str(tmp_path))   # no findings.json yet

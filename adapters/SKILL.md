@@ -11,5 +11,6 @@ Before you tell the user a change is done or ready to deploy, run vulngate and r
 2. **Read** the normalized results from `findings.json` (fields: `severity`, `file`, `line`, `plain_summary`, `remediation_hint`).
 3. **Explain + fix.** For each finding at/above `high`: if the MCP server is available use `explain_finding` then `suggest_patch`; otherwise use `plain_summary` and `remediation_hint`. Explain the risk to the user in plain English and propose a **minimal** fix.
 4. **Show the diff before applying** any security fix. Never commit a secret — rotate it and load it from an environment variable.
+5. **Verify.** After applying a fix, confirm it landed: with the MCP server, call `verify_fix` (re-scans and only reports `fixed` when the owning scanner actually ran); otherwise re-run `vulngate scan .` and check the finding's `id` is gone. A finding vanishing because a scanner didn't run is **not** a fix.
 
 Not installed? Tell the user: `pip install "vulngate[scanners]"` (and `brew install gitleaks` for secret scanning). vulngate is deterministic and free — it scans the code, not the agent.

@@ -129,6 +129,75 @@ def _suggest_patch(finding_id: str, path: str = ".") -> dict[str, Any]:
     }
 
 
+def _scanner_run(data: dict, scanner: str) -> dict | None:
+    for s in (data.get("scan", {}) or {}).get("scanners", []):
+        if s.get("name") == scanner:
+            return s
+    return None
+
+
+def _verify_fix(finding_id: str, path: str = ".") -> dict[str, Any]:
+    """Re-scan after a fix and confirm the finding's stable id is actually gone.
+
+    The stable, line-independent id is what makes this trustworthy: an edit that
+    shifts code around keeps the id, so a disappearance means the *pattern* is
+    gone, not that lines moved. The critical safety check: a finding can also
+    vanish because its scanner didn't run this time (not installed, errored) —
+    that is NOT a fix. We confirm the owning scanner `completed` in the re-scan
+    before ever reporting 'fixed'; otherwise the verdict is 'inconclusive'.
+    """
+    before = _load(path)
+    if before is None:
+        return {"error": "no findings.json — run scan_repo first, then verify_fix after applying a fix."}
+    original = _find(before, finding_id)
+    # Re-scan (this overwrites findings.json with the post-fix 'after' state).
+    after = _scan_repo(path)
+    if "error" in after:
+        return {"verdict": "inconclusive", "reason": "the re-scan failed to run; cannot confirm the fix",
+                "detail": after.get("detail", ""), "scan_error": after.get("error")}
+
+    still = _find(after, finding_id)
+    scanner = (original or still or {}).get("scanner")
+    run = _scanner_run(after, scanner) if scanner else None
+    scanner_completed = bool(run) and run.get("status") == "completed"
+    remaining = after.get("summary", {}).get("total")
+
+    if still is not None:
+        verdict, message = "still_present", (
+            "The finding is still reported after re-scanning — the fix didn't remove it. "
+            "Inspect the current code and try a different approach.")
+    elif original is None:
+        # The id wasn't in the baseline, so there's nothing to compare against.
+        verdict, message = "unknown_finding", (
+            f"No finding with id '{finding_id}' in the previous findings.json, so there's "
+            "nothing to verify. Re-run scan_repo and pass a current id.")
+    elif not scanner_completed:
+        status = run.get("status") if run else "missing"
+        verdict, message = "inconclusive", (
+            f"The finding is gone, but its scanner ('{scanner}') did not complete this run "
+            f"(status: {status}) — a disappearance from a scanner that didn't run is not a "
+            "confirmed fix. Restore the scanner and verify again.")
+    else:
+        verdict, message = "fixed", (
+            f"Confirmed: '{scanner}' re-ran and no longer reports this finding. The fix removed it.")
+
+    return {
+        "verdict": verdict,               # fixed | still_present | inconclusive | unknown_finding
+        "finding_id": finding_id,
+        "message": message,
+        "resolved": verdict == "fixed",
+        "original_finding": original,     # what it was (may be null if not in baseline)
+        "scanner": scanner,
+        "scanner_status": run.get("status") if run else None,
+        "scan_status": (after.get("scan", {}) or {}).get("status"),
+        "remaining_total": remaining,
+        "guidance": ("Report the verdict plainly. Only 'fixed' means the issue is resolved and "
+                     "confirmed by a scanner that actually ran. For 'still_present', help the user "
+                     "revise the fix. For 'inconclusive', the scanner didn't complete — get it "
+                     "installed/working before trusting a clean result."),
+    }
+
+
 # ── MCP wiring (guarded so the module imports without the SDK) ───────────────
 try:
     from mcp.server.fastmcp import FastMCP
@@ -168,6 +237,18 @@ try:
         scan_repo first.
         """
         return _suggest_patch(finding_id, path)
+
+    @_mcp.tool()
+    def verify_fix(finding_id: str, path: str = ".") -> dict:
+        """After a fix has been applied, RE-SCAN and confirm the finding (by its stable
+        id from scan_repo) is actually gone. Returns a verdict: 'fixed' (the owning
+        scanner re-ran and no longer reports it), 'still_present' (the fix didn't remove
+        it), 'inconclusive' (it's gone but the scanner didn't complete this run, so a
+        clean result can't be trusted), or 'unknown_finding'. This re-runs the scanners
+        and overwrites findings.json; it makes no LLM calls and never edits code. Use it
+        to close the loop after suggest_patch and the user applying the change.
+        """
+        return _verify_fix(finding_id, path)
 
 except ImportError:  # pragma: no cover
     _mcp = None
