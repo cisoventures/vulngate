@@ -126,20 +126,25 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      # Uploading SARIF needs a PUBLIC repo or GitHub Advanced Security. On a private
-      # repo without it the upload hard-fails — which would turn a PASSING scan into a
-      # red build. Composite steps can't use continue-on-error, so probe first and skip
-      # the upload cleanly instead. Findings still appear in the log + PR comment.
+      # Uploading SARIF needs a PUBLIC repo (code scanning is free there) or GitHub
+      # Advanced Security on a private repo. Without it the upload hard-fails — which
+      # would turn a PASSING scan into a red build. Composite steps can't use
+      # continue-on-error, so decide here and skip cleanly instead.
+      #
+      # We read repo metadata rather than probing /code-scanning/alerts: that endpoint
+      # returns 404 "no analysis found" on a perfectly-capable repo that simply hasn't
+      # uploaded yet, which would wrongly disable uploads forever.
       run: |
-        code=$(curl -s -o /dev/null -w "%{http_code}" \
-          -H "Authorization: Bearer $GH_TOKEN" \
+        meta=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
           -H "Accept: application/vnd.github+json" \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/code-scanning/alerts?per_page=1" || echo "000")
-        if [ "$code" = "403" ] || [ "$code" = "404" ]; then
+          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}" || echo '{}')
+        visibility=$(printf '%s' "$meta" | jq -r '.visibility // empty')
+        ghas=$(printf '%s' "$meta" | jq -r '.security_and_analysis.advanced_security.status // empty')
+        if [ "$visibility" = "public" ] || [ "$ghas" = "enabled" ]; then
+          echo "available=true" >> "$GITHUB_OUTPUT"
+        else
           echo "available=false" >> "$GITHUB_OUTPUT"
           echo "vulngate: code scanning is not available for this repository (it needs a public repo or GitHub Advanced Security) — skipping the SARIF upload. This does NOT affect the scan result."
-        else
-          echo "available=true" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Upload SARIF
