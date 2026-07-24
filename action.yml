@@ -109,7 +109,7 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
       run: |
-        pip install anthropic==0.118.0 >/dev/null   # pinned for reproducibility
+        pip install anthropic==0.120.0 >/dev/null   # pinned for reproducibility
         python "${{ github.action_path }}/action/scripts/triage.py" findings.json
 
     - name: Generate SARIF (from final findings.json)

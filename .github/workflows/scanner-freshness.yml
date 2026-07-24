@@ -1,0 +1,94 @@
+name: scanner-freshness
+
+# Pinning the scanners protects the supply chain but creates staleness — and a
+# stale security scanner silently loses detection. Dependabot can't help here:
+# the pins live inside shell `run:` blocks in action.yml, which it cannot parse.
+#
+# This job closes that blind spot. Weekly it checks each pinned scanner against
+# its latest release, rewrites the pins (recomputing gitleaks' per-arch sha256),
+# PROVES the new versions still work by running the suite + the fixture e2e, and
+# opens a PR for a human to merge. Still pinned, still checksummed, still tested,
+# still reviewed — just never stale.
+#
+# Deliberately NOT auto-merged: reviewing the version bump is the control that
+# pinning buys us. Auto-merging would hand that back.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"      # Mondays 07:00 UTC
+  workflow_dispatch:          # and on demand
+
+permissions:
+  contents: write             # push the update branch
+  pull-requests: write        # open the PR
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are SHA-pinned; trailing comment = the tag.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+
+      - name: Check for newer scanner releases
+        id: check
+        run: |
+          set +e
+          python scripts/check_scanner_freshness.py --write | tee freshness.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          # exit 1 = updates applied, 0 = already current, 2 = the check itself failed
+          if [ "$code" = "2" ]; then echo "the freshness check failed" >&2; exit 1; fi
+          echo "updated=$([ "$code" = "1" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      # Prove the NEW versions actually work before asking anyone to merge them.
+      # A scanner bump that breaks the gate is worse than a slightly stale pin.
+      - name: Verify the new pins (unit + e2e against the fixture)
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          set -euo pipefail
+          semgrep_v=$(grep -oE 'semgrep==[0-9][0-9A-Za-z.\-]*' action.yml | head -1 | cut -d= -f3)
+          pipaudit_v=$(grep -oE 'pip-audit==[0-9][0-9A-Za-z.\-]*' action.yml | head -1 | cut -d= -f3)
+          pip install -e ".[dev]" "semgrep==${semgrep_v}" "pip-audit==${pipaudit_v}"
+          pytest -q
+          # The deliberately-vulnerable fixture must still be caught (exit 1).
+          set +e
+          vulngate scan test-fixtures/vulnerable-sample --json findings.json --no-color
+          scan_code=$?
+          set -e
+          test "$scan_code" = "1" || { echo "fixture no longer exits 1 under the new pins"; exit 1; }
+          python -c "import json,jsonschema; jsonschema.validate(json.load(open('findings.json')), json.load(open('schemas/findings.schema.json'))); print('findings.json still schema-valid')"
+
+      - name: Open the update PR
+        if: steps.check.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="deps/scanner-freshness-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add action.yml
+          git commit -m "deps: refresh pinned scanner versions
+
+$(sed -n '/^Updates available:/,$p' freshness.txt | tail -n +2)
+
+Verified in-job: unit suite green, fixture still exits 1, findings.json schema-valid."
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "deps: refresh pinned scanner versions" \
+            --body "$(printf '%s\n' \
+              'Automated by `scanner-freshness`. Pinned scanners protect the supply chain but go stale — stale scanners silently lose detection (worst for **gitleaks**, whose secret patterns are compiled into the binary).' \
+              '' \
+              '## Updates' '```' "$(sed -n '/^Updates available:/,$p' freshness.txt | tail -n +2)" '```' \
+              '' \
+              '## Verified before opening this PR' \
+              '- Unit suite green on the new versions' \
+              '- Fixture still exits `1` (detection did not regress)' \
+              '- `findings.json` still schema-valid' \
+              '- gitleaks sha256 recomputed for **every** architecture (a version bump with stale checksums would break the build)' \
+              '' \
+              'Not auto-merged on purpose: reviewing the bump is the control pinning buys us.')"
