@@ -120,8 +120,30 @@ runs:
       run: |
         vulngate sarif findings.json --out vulngate.sarif || echo "vulngate - SARIF generation skipped (no findings.json)"
 
-    - name: Upload SARIF
+    - name: Check code scanning availability
+      id: codescanning
       if: inputs.upload-sarif == 'true' && always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      # Uploading SARIF needs a PUBLIC repo or GitHub Advanced Security. On a private
+      # repo without it the upload hard-fails — which would turn a PASSING scan into a
+      # red build. Composite steps can't use continue-on-error, so probe first and skip
+      # the upload cleanly instead. Findings still appear in the log + PR comment.
+      run: |
+        code=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: Bearer $GH_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/code-scanning/alerts?per_page=1" || echo "000")
+        if [ "$code" = "403" ] || [ "$code" = "404" ]; then
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "vulngate: code scanning is not available for this repository (it needs a public repo or GitHub Advanced Security) — skipping the SARIF upload. This does NOT affect the scan result."
+        else
+          echo "available=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true' && steps.codescanning.outputs.available == 'true' && always()
       uses: github/codeql-action/upload-sarif@4187e74d05793876e9989daffde9c3e66b4acd07  # v3
       with:
         sarif_file: vulngate.sarif

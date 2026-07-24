@@ -125,6 +125,7 @@ permissions:
   contents: read
   pull-requests: write     # for the PR comment
   security-events: write   # for SARIF upload
+  actions: read            # required by the SARIF upload action
 jobs:
   security:
     runs-on: ubuntu-latest
@@ -133,6 +134,7 @@ jobs:
       - uses: cisoventures/vulngate@v1
         with:
           fail-on: high
+          # ignore-dev-deps: true                                 # build-only dep flaws: report, don't block
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # optional: your key → LLM triage + fix suggestions
 ```
 
@@ -140,6 +142,11 @@ It upserts a **single** PR comment (never spams), uploads SARIF to the Security
 tab, and fails the check above the threshold. See [`action/`](action/) for all
 inputs. The optional LLM triage runs on **your** key — omit it and the free
 deterministic gate is fully useful.
+
+**Private repos:** uploading SARIF to the Security tab needs a public repo or
+GitHub Advanced Security. vulngate detects when code scanning isn't available and
+**skips the upload** rather than failing your build — a passing scan always stays
+a passing build. (Set `upload-sarif: false` to skip the check entirely.)
 
 ## Use it with your agent (the vibe-coder loop)
 
