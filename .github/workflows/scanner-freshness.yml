@@ -49,8 +49,8 @@ jobs:
         if: steps.check.outputs.updated == 'true'
         run: |
           set -euo pipefail
-          semgrep_v=$(grep -oE 'semgrep==[0-9][0-9A-Za-z.\-]*' action.yml | head -1 | cut -d= -f3)
-          pipaudit_v=$(grep -oE 'pip-audit==[0-9][0-9A-Za-z.\-]*' action.yml | head -1 | cut -d= -f3)
+          semgrep_v=$(grep -oE 'semgrep==[0-9][0-9A-Za-z.-]*' action.yml | head -1 | cut -d= -f3)
+          pipaudit_v=$(grep -oE 'pip-audit==[0-9][0-9A-Za-z.-]*' action.yml | head -1 | cut -d= -f3)
           pip install -e ".[dev]" "semgrep==${semgrep_v}" "pip-audit==${pipaudit_v}"
           pytest -q
           # The deliberately-vulnerable fixture must still be caught (exit 1).
@@ -58,7 +58,10 @@ jobs:
           vulngate scan test-fixtures/vulnerable-sample --json findings.json --no-color
           scan_code=$?
           set -e
-          test "$scan_code" = "1" || { echo "fixture no longer exits 1 under the new pins"; exit 1; }
+          if [ "$scan_code" != "1" ]; then
+            echo "detection regressed: the fixture no longer exits 1 under the new pins" >&2
+            exit 1
+          fi
           python -c "import json,jsonschema; jsonschema.validate(json.load(open('findings.json')), json.load(open('schemas/findings.schema.json'))); print('findings.json still schema-valid')"
 
       - name: Open the update PR
@@ -67,28 +70,39 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          updates=$(sed -n '/^Updates available:/,$p' freshness.txt | tail -n +2)
           branch="deps/scanner-freshness-$(date -u +%Y%m%d)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add action.yml
-          git commit -m "deps: refresh pinned scanner versions
-
-$(sed -n '/^Updates available:/,$p' freshness.txt | tail -n +2)
-
-Verified in-job: unit suite green, fixture still exits 1, findings.json schema-valid."
+          {
+            echo "deps: refresh pinned scanner versions"
+            echo
+            echo "$updates"
+            echo
+            echo "Verified in-job: unit suite green, fixture still exits 1, schema still valid."
+          } > "$RUNNER_TEMP/commit-msg.txt"
+          git commit -F "$RUNNER_TEMP/commit-msg.txt"
           git push -u origin "$branch"
+          {
+            echo "Automated by the \`scanner-freshness\` workflow."
+            echo
+            echo "Pinned scanners protect the supply chain but go stale — and stale scanners silently lose detection. That is worst for **gitleaks**, whose secret-detection patterns are compiled into the binary."
+            echo
+            echo "## Updates"
+            echo '```'
+            echo "$updates"
+            echo '```'
+            echo
+            echo "## Verified before this PR was opened"
+            echo "- Unit suite green on the new versions"
+            echo "- Fixture still exits \`1\` — detection did not regress"
+            echo "- \`findings.json\` still schema-valid"
+            echo "- gitleaks sha256 recomputed for **every** architecture (a version bump with stale checksums would break the build)"
+            echo
+            echo "Not auto-merged on purpose: reviewing the bump is the control that pinning buys us."
+          } > "$RUNNER_TEMP/pr-body.md"
           gh pr create --base main --head "$branch" \
             --title "deps: refresh pinned scanner versions" \
-            --body "$(printf '%s\n' \
-              'Automated by `scanner-freshness`. Pinned scanners protect the supply chain but go stale — stale scanners silently lose detection (worst for **gitleaks**, whose secret patterns are compiled into the binary).' \
-              '' \
-              '## Updates' '```' "$(sed -n '/^Updates available:/,$p' freshness.txt | tail -n +2)" '```' \
-              '' \
-              '## Verified before opening this PR' \
-              '- Unit suite green on the new versions' \
-              '- Fixture still exits `1` (detection did not regress)' \
-              '- `findings.json` still schema-valid' \
-              '- gitleaks sha256 recomputed for **every** architecture (a version bump with stale checksums would break the build)' \
-              '' \
-              'Not auto-merged on purpose: reviewing the bump is the control pinning buys us.')"
+            --body-file "$RUNNER_TEMP/pr-body.md"
