@@ -1,3 +1,3 @@
 """vulngate — agent-neutral security checks before you ship."""
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"
