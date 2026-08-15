@@ -52,7 +52,7 @@ runs:
       # Install vulngate from the action's own checkout (always the version pinned
       # by the `uses:` ref), then pin the Python scanners EXACTLY to the versions CI
       # tests against — reproducible runs, no surprise scanner upgrade mid-release.
-      run: pip install "${{ github.action_path }}" semgrep==1.171.0 pip-audit==2.10.1
+      run: pip install "${{ github.action_path }}" semgrep==1.173.0 pip-audit==2.10.1
 
     - name: Install gitleaks
       if: inputs.install-gitleaks == 'true'
@@ -109,7 +109,7 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
       run: |
-        pip install anthropic==0.120.0 >/dev/null   # pinned for reproducibility
+        pip install anthropic==0.122.0 >/dev/null   # pinned for reproducibility
         python "${{ github.action_path }}/action/scripts/triage.py" findings.json
 
     - name: Generate SARIF (from final findings.json)
