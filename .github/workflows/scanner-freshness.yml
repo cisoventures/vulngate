@@ -88,6 +88,8 @@ jobs:
           {
             echo "Automated by the \`scanner-freshness\` workflow."
             echo
+            echo "> ⏳ **Before you can merge:** GitHub does not run CI on a PR opened by automation, and branch protection requires the checks to be green. Give it a nudge so they run — **push any commit to this branch, or just close and reopen this PR** — then merge once CI passes. (By design; a human reviewing the bump is the control that pinning buys us.)"
+            echo
             echo "Pinned scanners protect the supply chain but go stale — and stale scanners silently lose detection. That is worst for **gitleaks**, whose secret-detection patterns are compiled into the binary."
             echo
             echo "## Updates"
