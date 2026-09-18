@@ -31,10 +31,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ACTION = Path(__file__).resolve().parents[1] / "action.yml"
 UA = {"User-Agent": "vulngate-scanner-freshness"}
@@ -42,15 +45,39 @@ UA = {"User-Agent": "vulngate-scanner-freshness"}
 GITLEAKS_ARCHES = ("x64", "arm64")
 
 
-def _get_json(url: str) -> dict:
+def _request(url: str) -> urllib.request.Request:
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    # Unauthenticated GitHub API calls share a 60/hour budget per IP, and hosted
+    # runners share IPs — that is what failed the 2026-09-07 run (WHI-145). In CI
+    # the workflow token lifts it to 1,000+/hour. The token goes ONLY to
+    # api.github.com, and as an *unredirected* header so a redirect can never
+    # carry it to another host.
+    token = os.environ.get("GITHUB_TOKEN")
+    if token and urlsplit(url).hostname == "api.github.com":
+        req.add_unredirected_header("Authorization", f"Bearer {token}")
+    return req
+
+
+def _open(url: str):
+    try:
+        return urllib.request.urlopen(_request(url), timeout=30)
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 429) and e.headers.get("X-RateLimit-Remaining") == "0":
+            authed = "with" if os.environ.get("GITHUB_TOKEN") else "WITHOUT"
+            raise RuntimeError(
+                f"GitHub API rate limit hit {authed} a token ({url}); resets at epoch "
+                f"{e.headers.get('X-RateLimit-Reset', '?')}. Nothing was checked — "
+                "this is NOT 'all current'.") from e
+        raise
+
+
+def _get_json(url: str) -> dict:
+    with _open(url) as r:
         return json.loads(r.read())
 
 
 def _get_text(url: str) -> str:
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with _open(url) as r:
         return r.read().decode("utf-8", errors="replace")
 
 
@@ -99,8 +126,9 @@ def main() -> int:
         pattern = re.compile(rf"{re.escape(pkg)}==([0-9][0-9A-Za-z.\-]*)")
         found = pattern.search(text)
         if not found:
-            print(f"  !! {pkg}: pin not found in action.yml (did the format change?)", file=sys.stderr)
-            continue
+            # A pin we can't see is a pin we can't check. Skipping it would end in
+            # "All scanner pins are current" — the silent staleness this job exists to prevent.
+            raise RuntimeError(f"{pkg}: pin not found in action.yml (did the format change?)")
         current, newest = found.group(1), latest_pypi(pkg)
         if current != newest:
             text = pattern.sub(f"{pkg}=={newest}", text)
@@ -123,7 +151,7 @@ def main() -> int:
                 text = arch_re.sub(rf"\g<1>{digest}\g<3>", text)
             changes.append(f"gitleaks {current} -> {newest} (+ sha256 for {', '.join(sums)})")
     else:
-        print("  !! gitleaks: GITLEAKS_VERSION pin not found", file=sys.stderr)
+        raise RuntimeError("gitleaks: GITLEAKS_VERSION pin not found in action.yml")
 
     if not changes:
         print("\nAll scanner pins are current.")
@@ -141,9 +169,14 @@ def main() -> int:
     return 1
 
 
-if __name__ == "__main__":
+def cli() -> int:
+    """Exit 0 = all current, 1 = updates found, 2 = the check itself failed."""
     try:
-        sys.exit(main())
+        return main()
     except Exception as e:                     # network/parse failure must be loud, not silent
         print(f"scanner-freshness: {e}", file=sys.stderr)
-        sys.exit(2)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(cli())

@@ -34,6 +34,10 @@ jobs:
 
       - name: Check for newer scanner releases
         id: check
+        env:
+          # Authenticated GitHub API calls: the anonymous 60/hour per-IP budget is
+          # shared across hosted runners and failed the 2026-09-07 run (WHI-145).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           python scripts/check_scanner_freshness.py --write | tee freshness.txt
