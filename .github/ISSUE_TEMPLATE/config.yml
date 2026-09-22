@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability in vulngate itself
+    url: https://github.com/cisoventures/vulngate/security/advisories/new
+    about: Report privately, never as a public issue. See SECURITY.md for scope.
+  - name: A finding vulngate reported about your code
+    url: https://github.com/cisoventures/vulngate/blob/main/README.md#usage
+    about: That's the tool working. Every finding ships with a plain-English summary and a fix hint; fix it in your repo, or tune the threshold in vulngate.toml.

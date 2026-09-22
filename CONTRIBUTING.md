@@ -1,8 +1,11 @@
 # Contributing to vulngate
 
 Thanks for helping! vulngate is **community-maintained with no SLA**. There's no
-guaranteed response time — but issues and PRs are genuinely welcome, and peer
-help lives in **GitHub Discussions**.
+guaranteed response time — but issues and PRs are genuinely welcome. Questions
+and bugs go in [Issues](https://github.com/cisoventures/vulngate/issues); a
+**security flaw in vulngate itself** goes through
+[private reporting](https://github.com/cisoventures/vulngate/security/advisories/new),
+never a public issue — see [SECURITY.md](SECURITY.md).
 
 ## Ground rules
 
@@ -28,6 +31,10 @@ pytest -q                                   # unit tests (no network)
 vulngate scan test-fixtures/vulnerable-sample   # end-to-end; should exit 1
 ```
 
+CI runs the suite on Python **3.11, 3.12 and 3.13**, plus the end-to-end scan of
+the deliberately-vulnerable fixture. A change that stops that fixture exiting `1`
+is a detection regression, not a style question.
+
 ## Adding a scanner adapter
 
 1. Create `vulngate/scanners/<tool>_scanner.py` exposing
@@ -48,6 +55,9 @@ vulngate scan test-fixtures/vulnerable-sample   # end-to-end; should exit 1
 
 - One CLI core; the Action/MCP/adapters are thin wrappers — never duplicate
   scan logic.
+- **A new test has to be able to fail.** Break the thing it covers on purpose,
+  watch it go red, then restore. A test that agrees with the implementation
+  rather than with reality proves nothing.
 - The core makes **no LLM calls**. Inference is bring-your-own.
 - Graceful degradation always: a missing/broken scanner warns and skips.
 - `findings.json` is safe to share: no secrets, no snippets, no absolute paths.

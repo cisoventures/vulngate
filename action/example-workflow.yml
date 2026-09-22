@@ -13,7 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cisoventures/vulngate@v1
+      # Pinned by commit, not by tag: a moving tag can change what runs without a diff.
+      # Add .github/dependabot.yml (github-actions, weekly) and updates arrive as PRs.
+      - uses: cisoventures/vulngate@b6a322b92b494341a9d702e2c8e91856a9096412  # v1.5.5
         with:
           fail-on: high
           # diff-only: true                                  # only fail on files this PR touched

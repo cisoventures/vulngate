@@ -1,0 +1,43 @@
+name: Idea or improvement
+description: A new scanner adapter, a clearer message, a knowledge-pack entry, a missing capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two design rules worth knowing before you write, because they rule some ideas out:
+        **the core makes no LLM calls** (inference is bring-your-own), and
+        **the core stays dependency-free** (scanners are external tools we shell out to).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: What were you trying to do, and where did vulngate get in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like it to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of change is this?
+      options:
+        - New scanner adapter
+        - Plain-English knowledge pack entry (good first contribution)
+        - CLI behaviour or output
+        - GitHub Action
+        - MCP server / agent loop
+        - Docs
+        - Something else
+    validations:
+      required: true
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Would you like to build it?
+      options:
+        - label: I'd be up for opening a PR

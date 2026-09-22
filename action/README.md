@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cisoventures/vulngate@v1
+      - uses: cisoventures/vulngate@b6a322b92b494341a9d702e2c8e91856a9096412  # v1.5.5
         with:
           fail-on: high
 ```
