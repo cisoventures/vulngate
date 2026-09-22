@@ -5,8 +5,9 @@ version 2.1.
 
 In short: be respectful, assume good faith, and help make participation a
 harassment-free experience for everyone regardless of background or identity.
-Unacceptable behavior may be reported by opening a confidential issue or
-contacting the maintainers listed in the repository. Maintainers may remove,
+Unacceptable behavior may be reported privately through
+[GitHub's private reporting form](https://github.com/cisoventures/vulngate/security/advisories/new)
+on this repository, which only the maintainers can see. Maintainers may remove,
 edit, or reject contributions and comments that violate this code.
 
 The full text of the Contributor Covenant 2.1 applies and is incorporated here

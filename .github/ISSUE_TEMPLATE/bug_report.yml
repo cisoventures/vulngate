@@ -1,0 +1,64 @@
+name: Bug report
+description: Something vulngate does wrong — a crash, a wrong result, a confusing message
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Community-maintained, no SLA — but every issue gets read.
+
+        **Found a security flaw in vulngate itself?** Don't file it here — use
+        [private vulnerability reporting](https://github.com/cisoventures/vulngate/security/advisories/new).
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does it happen?
+      options:
+        - CLI (vulngate scan / gate / sarif)
+        - GitHub Action
+        - MCP server (vulngate-mcp)
+        - Agent adapters (SKILL.md / AGENTS.md / cursor.mdc)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest command or workflow that shows it. A public repo or snippet that triggers it helps a lot.
+      placeholder: |
+        1. pip install "vulngate[scanners]"
+        2. vulngate scan ./my-project --fail-on high
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Terminal output, or the relevant part of `findings.json` / the workflow log. Redact anything sensitive — and if a secret value showed up somewhere it shouldn't, that's a security report, not this form.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: vulngate version
+      placeholder: "output of: vulngate --version"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "e.g. macOS 15 / Python 3.12 / ubuntu-latest runner"
+  - type: textarea
+    id: scanners
+    attributes:
+      label: Scanner status from the run
+      description: The per-scanner status line vulngate prints (completed / not_applicable / unavailable / disabled / error). It usually explains a surprising result.
+      render: text

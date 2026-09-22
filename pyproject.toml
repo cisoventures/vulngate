@@ -16,7 +16,11 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Environment :: Console",
   "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
 ]
 # The core has ZERO required runtime dependencies — stdlib only.
 dependencies = []
@@ -36,6 +40,9 @@ vulngate-mcp = "vulngate.mcp_server:main"
 [project.urls]
 Homepage = "https://github.com/cisoventures/vulngate"
 Issues = "https://github.com/cisoventures/vulngate/issues"
+Changelog = "https://github.com/cisoventures/vulngate/releases"
+"GitHub Action" = "https://github.com/marketplace/actions/vulngate"
+Security = "https://github.com/cisoventures/vulngate/blob/main/SECURITY.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vulngate"]
