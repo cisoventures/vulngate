@@ -52,7 +52,7 @@ runs:
       # Install vulngate from the action's own checkout (always the version pinned
       # by the `uses:` ref), then pin the Python scanners EXACTLY to the versions CI
       # tests against — reproducible runs, no surprise scanner upgrade mid-release.
-      run: pip install "${{ github.action_path }}" semgrep==1.182.1 pip-audit==2.10.1
+      run: pip install "${{ github.action_path }}" semgrep==1.183.0 pip-audit==2.10.1
 
     - name: Install gitleaks
       if: inputs.install-gitleaks == 'true'
